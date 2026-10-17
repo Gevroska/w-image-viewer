@@ -113,17 +113,19 @@ LRESULT Window::handle_message(HWND hwnd, UINT message, WPARAM wparam, LPARAM lp
         // Provides the mosuse cursor in fullscren on mousemove.
         // Without this, after exiting from fullscreen the mosue cursor may stay hidden.
         case WM_MOUSEMOVE:
-            while (ShowCursor(TRUE) < 0);
+            renderer.ui.on_mouse_activity();
             return 0;
         case WM_NCMOUSEMOVE:
-            while (ShowCursor(TRUE) < 0);
+        case WM_KILLFOCUS:
+            renderer.fullscreen_hide_cursor(true);
             return 0;
 
         case WIV_WM_OPEN_FILE:
-            renderer.create_image();
+            if (!renderer.create_image()) return 0;
             if (g_config.window_autowh.val) {
                 renderer.ui.auto_window_size();
             }
+            renderer.ui.on_image_opened(wparam != 0);
             renderer.ui.reset_image_panzoom();
             reset_image_rotation();
             set_window_name();
@@ -139,7 +141,8 @@ LRESULT Window::handle_message(HWND hwnd, UINT message, WPARAM wparam, LPARAM lp
                 const auto client_width = rc_w<double>(unadjusted_rect);
                 const auto client_height = rc_h<double>(unadjusted_rect);
 
-                const auto image_aspect = renderer.ui.file_manager.image.get_aspect<double>();
+                auto image_aspect = renderer.ui.file_manager.image.get_aspect<double>();
+                if (renderer.ui.image_rotation % 180) image_aspect = 1.0 / image_aspect;
                 const auto new_client_width = std::lround(client_height * image_aspect - client_width);
                 const auto new_client_height = std::lround(client_width / image_aspect - client_height);
                 switch (wparam) {
@@ -169,22 +172,15 @@ LRESULT Window::handle_message(HWND hwnd, UINT message, WPARAM wparam, LPARAM lp
             return 0;
         case WM_DROPFILES:
             ensure(SetForegroundWindow(hwnd), != 0);
-            if (renderer.ui.file_manager.drag_and_drop(reinterpret_cast<HDROP>(wparam))) {
-                renderer.create_image();
-                if (g_config.window_autowh.val) {
-                    renderer.ui.auto_window_size();
-                }
-                renderer.ui.reset_image_panzoom();
-                reset_image_rotation();
-                set_window_name();
-                renderer.should_update = true;
-            }
+            if (renderer.ui.file_manager.drag_and_drop(reinterpret_cast<HDROP>(wparam)))
+                PostMessageW(hwnd, WIV_WM_OPEN_FILE, 0, 0);
             return 0;
         case WIV_WM_RESET_RESOURCES:
             renderer.reset_resources();
             ensure(SetWindowTextW(hwnd, WIV_WINDOW_NAME), != 0);
             return 0;
         case WM_DESTROY:
+            renderer.fullscreen_hide_cursor(true);
             PostQuitMessage(0);
             return 0;
     }
@@ -210,25 +206,6 @@ void Window::set_window_name() const
 
 void Window::reset_image_rotation() noexcept
 {
-    // Rotated 180.
-    if (renderer.ui.file_manager.image.orientation == 2) {
-        renderer.ui.image_rotation = -180;
-    }
-
-    // Rotated 90 cw.
-    else if (renderer.ui.file_manager.image.orientation == 5) {
-        renderer.ui.image_rotation = -90;
-    }
-
-    // Rotated 90 ccw.
-    else if (renderer.ui.file_manager.image.orientation == 7) {
-        renderer.ui.image_rotation = 90;
-    }
-
-    else {
-        renderer.ui.image_rotation = 0;
-    }
-
-    // Reset orientation.
-    renderer.ui.file_manager.image.orientation = 0;
+    // Decoder orientation is already normalized in the uploaded image.
+    renderer.ui.image_rotation = 0;
 }

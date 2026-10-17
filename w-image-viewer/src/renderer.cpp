@@ -125,20 +125,22 @@ void Renderer::draw() const
 }
 
 // Creates the first texture from the loaded image.
-void Renderer::create_image()
+bool Renderer::create_image()
 {
+	const Image* candidate = ui.file_manager.pending_image();
+	if (!candidate) return false;
 	// Get data from the image.
 	DXGI_FORMAT format;
 	UINT sys_mem_pitch;
-	std::unique_ptr<uint8_t[]> data = get_image_data(format, sys_mem_pitch);
+	const uint8_t* data = get_image_data(*candidate, format, sys_mem_pitch);
 	
-	Info::image_width = image.get_width<int>();
-	Info::image_height = image.get_height<int>();
+	Info::image_width = candidate->get_width<int>();
+	Info::image_height = candidate->get_height<int>();
 
 	// Create texture.
 	D3D11_TEXTURE2D_DESC texture2d_desc = {};
-	texture2d_desc.Width = image.get_width<UINT>();
-	texture2d_desc.Height = image.get_height<UINT>();
+	texture2d_desc.Width = candidate->get_width<UINT>();
+	texture2d_desc.Height = candidate->get_height<UINT>();
 	texture2d_desc.MipLevels = 1;
 	texture2d_desc.ArraySize = 1;
 	texture2d_desc.Format = format;
@@ -146,11 +148,19 @@ void Renderer::create_image()
 	texture2d_desc.Usage = D3D11_USAGE_IMMUTABLE;
 	texture2d_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
 	D3D11_SUBRESOURCE_DATA subresource_data = {};
-	subresource_data.pSysMem = data.get();
+	subresource_data.pSysMem = data;
 	subresource_data.SysMemPitch = sys_mem_pitch;
 	Com_ptr<ID3D11Texture2D> texture2d;
-	ensure(device->CreateTexture2D(&texture2d_desc, &subresource_data, texture2d.put()), >= 0);
-	ensure(device->CreateShaderResourceView(texture2d.get(), nullptr, srv_image.put()), >= 0);
+	Com_ptr<ID3D11ShaderResourceView> view;
+	if (FAILED(device->CreateTexture2D(&texture2d_desc, &subresource_data, texture2d.put()))
+	    || FAILED(device->CreateShaderResourceView(texture2d.get(), nullptr, view.put()))) {
+		ui.file_manager.cancel_open();
+		return false;
+	}
+	srv_image = std::move(view);
+	ui.file_manager.commit_open();
+	Info::image_bitdepth = image.bitdepth;
+	Info::image_nchannels = image.channels;
 
 	if (cms_profile_display) {
 		create_cms_lut();
@@ -160,6 +170,7 @@ void Renderer::create_image()
 	else {
 		trc = image.trc;
 	}
+	return true;
 }
 
 void Renderer::on_window_resize() noexcept
@@ -186,37 +197,26 @@ void Renderer::reset_resources() noexcept
 }
 
 // This is defined here only cause of code organization.
-void Renderer::fullscreen_hide_cursor() const
+void Renderer::fullscreen_hide_cursor(bool force_visible)
 {
-	if (ui.is_fullscreen && !ImGui::GetIO().WantCaptureMouse && !ui.is_dialog_file_open)
-		while (ShowCursor(FALSE) >= 0);
+    const bool hide = !force_visible && ui.is_fullscreen && GetForegroundWindow() == g_hwnd
+        && !ImGui::GetIO().WantCaptureMouse && !ui.is_dialog_file_open && !ui.navigation_visible();
+    if (hide == cursor_hidden_) return;
+    if (hide) { while (ShowCursor(FALSE) >= 0) {} }
+    else { while (ShowCursor(TRUE) < 0) {} }
+    cursor_hidden_ = hide;
 }
 
-std::unique_ptr<uint8_t[]> Renderer::get_image_data(DXGI_FORMAT& format, UINT& sys_mem_pitch)
+const uint8_t* Renderer::get_image_data(const Image& source, DXGI_FORMAT& format, UINT& sys_mem_pitch)
 {
-	std::unique_ptr<uint8_t[]> data;
-	switch (image.get_basetype()) {
-		case OIIO::TypeDesc::UINT8:
-			data = image.get_image_data<uint8_t>();
-			format = DXGI_FORMAT_R8G8B8A8_UNORM;
-			sys_mem_pitch = image.get_width<int>() * 4;
-			break;
-		case OIIO::TypeDesc::UINT16:
-			data = image.get_image_data<uint16_t>();
-			format = DXGI_FORMAT_R16G16B16A16_UNORM;
-			sys_mem_pitch = image.get_width<int>() * 4 * 2;
-			break;
-		case OIIO::TypeDesc::HALF:
-			data = image.get_image_data<uint16_t>();
-			format = DXGI_FORMAT_R16G16B16A16_FLOAT;
-			sys_mem_pitch = image.get_width<int>() * 4 * 2;
-			break;
-		case OIIO::TypeDesc::FLOAT:
-			data = image.get_image_data<uint32_t>();
-			format = DXGI_FORMAT_R32G32B32A32_FLOAT;
-			sys_mem_pitch = image.get_width<int>() * 4 * 4;
-	}
-	return data;
+    switch (source.get_basetype()) {
+        case OIIO::TypeDesc::UINT8: format = DXGI_FORMAT_R8G8B8A8_UNORM; break;
+        case OIIO::TypeDesc::UINT16: format = DXGI_FORMAT_R16G16B16A16_UNORM; break;
+        case OIIO::TypeDesc::HALF: format = DXGI_FORMAT_R16G16B16A16_FLOAT; break;
+        default: format = DXGI_FORMAT_R32G32B32A32_FLOAT; break;
+    }
+    sys_mem_pitch = static_cast<UINT>(source.get_width<size_t>() * source.pixel_bytes());
+    return source.pixels();
 }
 
 void Renderer::update_scale_and_dims_output() noexcept
@@ -248,11 +248,13 @@ void Renderer::update_scale_and_dims_output() noexcept
 	else if (scaled_w < 1.0f || scaled_h < 1.0f)
 		scale = std::max(1.0f / image_w, 1.0f / image_h);
 
-	dims_output.width = static_cast<int>(std::ceil(image_w * scale));
-	dims_output.height = static_cast<int>(std::ceil(image_h * scale));
+	// Resample in texture coordinates; rotate only the final display viewport.
+	dims_output.width = static_cast<int>(std::ceil(image.get_width<float>() * scale));
+	dims_output.height = static_cast<int>(std::ceil(image.get_height<float>() * scale));
 	Info::scale = scale;
 	Info::scaled_width = dims_output.width;
 	Info::scaled_height = dims_output.height;
+	if (ui.image_rotation % 180) std::swap(Info::scaled_width, Info::scaled_height);
 }
 
 void Renderer::update_scale_profile() noexcept
@@ -640,11 +642,13 @@ void Renderer::pass_cylindrical_resample()
 
 void Renderer::update_final_pass()
 {
+    float display_width = dims_output.get_width<float>(), display_height = dims_output.get_height<float>();
+    if (ui.image_rotation % 180) std::swap(display_width, display_height);
 	Com_ptr<ID3D11Buffer> cb0;
 	if (image.has_alpha()) {
 		alignas(16) Cb_data data[3];
-		data[0].x.f = dims_output.get_width<float>() / g_config.alpha_tile_size.val; // size.x
-		data[0].y.f = dims_output.get_height<float>() / g_config.alpha_tile_size.val; // size.y
+		data[0].x.f = display_width / g_config.alpha_tile_size.val; // size.x
+		data[0].y.f = display_height / g_config.alpha_tile_size.val; // size.y
 		data[0].z.f = ui.image_rotation; // theta
 
 		// Check is theta divisible by 360, if it is we dont need to rotate texcoord.
@@ -670,7 +674,7 @@ void Renderer::update_final_pass()
 		create_pixel_shader(PS_SAMPLE, sizeof(PS_SAMPLE));
 	}
 	ctx->PSSetShaderResources(0, 1, &srv_pass);
-	create_viewport(dims_output.get_width<float>(), dims_output.get_height<float>(), true);
+	create_viewport(display_width, display_height, true);
 }
 
 void Renderer::draw_pass(UINT width, UINT height) noexcept

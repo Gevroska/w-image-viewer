@@ -89,12 +89,13 @@ void User_interface::update()
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
 
-    input();
     overlay();
     context_menu();
     window_settings();
     window_about();
     window_slideshow();
+    navigation_controls();
+    input();
 
     // DEBUG ONLY!
     //
@@ -168,22 +169,99 @@ void User_interface::slideshow()
 
         return;
     }
-    static std::chrono::high_resolution_clock::time_point start;
+    static std::chrono::steady_clock::time_point start;
     
     // Upon slideshow start we need to set once duration for the first image (currently renderered image).
     if (is_slideshow_start) {
-        start = std::chrono::high_resolution_clock::now();
+        start = std::chrono::steady_clock::now();
         is_slideshow_start = false;
     }
 
-    if (std::chrono::duration<float>(std::chrono::high_resolution_clock::now() - start).count() < g_config.slideshow_interval.val) {
+    if (std::chrono::duration<float>(std::chrono::steady_clock::now() - start).count() < g_config.slideshow_interval.val) {
         return;
     }
-    file_manager.file_next();
-    PostMessageW(g_hwnd, WIV_WM_OPEN_FILE, 0, 0);
+    navigate(1, true);
 
     // This doesen't account for image load times.
-    start = std::chrono::high_resolution_clock::now();
+    start = std::chrono::steady_clock::now();
+}
+
+void User_interface::navigate(int direction, bool automatic)
+{
+    const bool changed = direction < 0 ? file_manager.file_previous() : file_manager.file_next();
+    if (changed) PostMessageW(g_hwnd, WIV_WM_OPEN_FILE, automatic ? 1 : 0, 0);
+}
+
+void User_interface::on_mouse_activity()
+{
+    if (ImGui::GetCurrentContext()) navigation_visibility_.reveal(ImGui::GetTime());
+}
+
+void User_interface::on_image_opened(bool automatic)
+{
+    if (!automatic) on_mouse_activity();
+    if (is_slideshow_playing) is_slideshow_start = true;
+}
+
+void User_interface::navigation_controls()
+{
+    const auto& io = ImGui::GetIO();
+    const auto* viewport = ImGui::GetMainViewport();
+    const double now = ImGui::GetTime();
+    const bool allowed = file_manager.image.is_valid() && GetForegroundWindow() == g_hwnd
+        && !IsIconic(g_hwnd) && !is_dialog_file_open && !is_window_settings_open
+        && !is_window_about_open && !is_window_slideshow_open
+        && !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
+    const float dpi = float(GetDpiForWindow(g_hwnd)) / 96.0f;
+    const ImVec2 size(48.0f * dpi, 64.0f * dpi);
+    const float padding = 12.0f * dpi;
+    const ImVec2 positions[] = {
+        {viewport->Pos.x + padding, viewport->Pos.y + (viewport->Size.y - size.y) / 2},
+        {viewport->Pos.x + viewport->Size.x - padding - size.x, viewport->Pos.y + (viewport->Size.y - size.y) / 2}
+    };
+    bool over_button = false;
+    if (navigation_visibility_.alpha > 0.0f && !canvas_drag_) {
+        for (const auto& position : positions)
+            over_button |= io.MousePos.x >= position.x && io.MousePos.x < position.x + size.x
+                && io.MousePos.y >= position.y && io.MousePos.y < position.y + size.y;
+    }
+    const bool mouse_inside = io.MousePos.x >= viewport->Pos.x && io.MousePos.x < viewport->Pos.x + viewport->Size.x
+        && io.MousePos.y >= viewport->Pos.y && io.MousePos.y < viewport->Pos.y + viewport->Size.y;
+    const bool moved = mouse_inside && (io.MouseDelta.x != 0 || io.MouseDelta.y != 0);
+    const float alpha = navigation_visibility_.update(now, moved, over_button, allowed);
+    navigation_captures_mouse_ = false;
+    if (alpha <= 0.0f) return;
+    for (int side = 0; side < 2; ++side) {
+        const int direction = side == 0 ? -1 : 1;
+        ImGui::SetNextWindowPos(positions[side]);
+        ImGui::SetNextWindowSize(size);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha);
+        const auto flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings
+            | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoBackground
+            | (canvas_drag_ ? ImGuiWindowFlags_NoInputs : 0);
+        ImGui::Begin(side == 0 ? "##previous_image" : "##next_image", nullptr, flags);
+        ImGui::BeginDisabled(!file_manager.can_navigate(direction));
+        if (ImGui::InvisibleButton(side == 0 ? "Previous image" : "Next image", size)) navigate(direction);
+        const bool hovered = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
+        navigation_captures_mouse_ |= !canvas_drag_ && (hovered || ImGui::IsItemActive()
+            || (mouse_inside && io.MousePos.x >= positions[side].x && io.MousePos.x < positions[side].x + size.x
+                && io.MousePos.y >= positions[side].y && io.MousePos.y < positions[side].y + size.y));
+        if (hovered || ImGui::IsItemActive()) navigation_visibility_.reveal(now);
+        auto* draw = ImGui::GetWindowDrawList();
+        const auto p = positions[side];
+        draw->AddRectFilled(p, ImVec2(p.x + size.x, p.y + size.y),
+            ImGui::GetColorU32(ImVec4(0.08f, 0.08f, 0.08f, hovered ? 0.9f : 0.65f)), 8 * dpi);
+        const ImVec2 center(p.x + size.x / 2, p.y + size.y / 2);
+        const float arrow = 9 * dpi;
+        draw->AddTriangleFilled(ImVec2(center.x + direction * arrow / 2, center.y),
+            ImVec2(center.x - direction * arrow / 2, center.y - arrow),
+            ImVec2(center.x - direction * arrow / 2, center.y + arrow),
+            ImGui::GetColorU32(ImVec4(1, 1, 1, 0.95f)));
+        ImGui::EndDisabled();
+        ImGui::End();
+        ImGui::PopStyleVar(2);
+    }
 }
 
 void User_interface::input()
@@ -196,7 +274,10 @@ void User_interface::input()
     // Mouse
     //
 
-    if (!ImGui::GetIO().WantCaptureMouse) {
+    if (ImGui::IsMouseReleased(0)) canvas_drag_ = false;
+    if (ImGui::IsMouseClicked(0) && !ImGui::GetIO().WantCaptureMouse && !navigation_captures_mouse_)
+        canvas_drag_ = true;
+    if ((!ImGui::GetIO().WantCaptureMouse && !navigation_captures_mouse_) || canvas_drag_) {
         if (ImGui::IsMouseDoubleClicked(0)) {
             toggle_fullscreen();
             is_double_click = true;
@@ -302,15 +383,13 @@ void User_interface::input()
         if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) {
             if (file_manager.file_current.empty())
                 return;
-            file_manager.file_previous();
-            ensure(PostMessageW(g_hwnd, WIV_WM_OPEN_FILE, 0, 0), != 0);
+            navigate(-1);
             return;
         }
         if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) {
             if (file_manager.file_current.empty())
                 return;
-            file_manager.file_next();
-            ensure(PostMessageW(g_hwnd, WIV_WM_OPEN_FILE, 0, 0), != 0);
+            navigate(1);
             return;
         }
         if (ImGui::IsKeyPressed(ImGuiKey_F11)) {
@@ -400,23 +479,20 @@ void User_interface::context_menu()
 {
     if (ImGui::BeginPopupContextVoid("Right click menu")) {
         if (ImGui::Selectable("Open...")) {
-            std::thread t(&User_interface::dialog_file_open, this, WIV_OPEN_IMAGE);
-            t.detach();
+            dialog_file_open(WIV_OPEN_IMAGE);
             goto end;
         }
         ImGui::Separator();
         if (ImGui::Selectable("Next")) {
             if (file_manager.file_current.empty())
                 goto end;
-            file_manager.file_next();
-            ensure(PostMessageW(g_hwnd, WIV_WM_OPEN_FILE, 0, 0), != 0);
+            navigate(1);
             goto end;
         }
         if (ImGui::Selectable("Previous")) {
             if (file_manager.file_current.empty())
                 goto end;
-            file_manager.file_previous();
-            ensure(PostMessageW(g_hwnd, WIV_WM_OPEN_FILE, 0, 0), != 0);
+            navigate(-1);
             goto end;
         }
         ImGui::Separator();
@@ -701,8 +777,7 @@ void User_interface::window_settings()
         g_config.cms_display_profile_custom.val = buffer;
         ImGui::SameLine();
         if (ImGui::Button("Custom...", button_size)) {
-            std::thread t(&User_interface::dialog_file_open, this, WIV_OPEN_ICC);
-            t.detach();
+            dialog_file_open(WIV_OPEN_ICC);
         }
         ImGui::EndDisabled();
         ImGui::Spacing();
@@ -861,7 +936,7 @@ void User_interface::window_about()
     static constexpr ImVec2 size = { 288, 178.0f };
     ImGui::SetNextWindowSize(size);
     ImGui::Begin("About", &is_window_about_open, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
-    ImGui::Text("W Image Viewer %d.%d.%d", WIV_VERSION_NUMBER_MAJOR, WIV_VERSION_NUMBER_MINOR, WIV_VERSION_NUMBER_PATCH);
+    ImGui::Text("W Image Viewer %s", WIV_VERSION_STRING);
     ImGui::Separator();
     ImGui::Spacing();
     ImGui::TextUnformatted(reinterpret_cast<const char*>(u8"Created by Ivan Bjeliš."));
@@ -896,9 +971,7 @@ void User_interface::dialog_file_open(WIV_OPEN_ file_type)
                         if (file_manager.file_open(path)) {
                             ensure(PostMessageW(g_hwnd, WIV_WM_OPEN_FILE, 0, 0), != 0);
                         }
-                        else {
-                            ensure(PostMessageW(g_hwnd, WIV_WM_RESET_RESOURCES, 0, 0), != 0);
-                        }
+
                     }
 
                     // WIV_OPEN_ICC

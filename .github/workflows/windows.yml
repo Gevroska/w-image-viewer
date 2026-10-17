@@ -2,7 +2,7 @@ name: Build Windows executable
 
 on:
   push:
-    branches: [master]
+    branches: [master, 'beta/**']
     tags: ['v*']
   pull_request:
     branches: [master]
@@ -45,11 +45,16 @@ jobs:
             }
             $Matches[1]
           }
-          $version = $parts -join '.'
+          $baseVersion = $parts -join '.'
+          if ($header -notmatch '(?m)^#define WIV_VERSION_STRING "(\d+\.\d+\.\d+(?:-beta\.[1-9]\d*)?)"\s*$') {
+            throw 'Invalid version string.'
+          }
+          $version = $Matches[1]
+          if (($version -split '-')[0] -cne $baseVersion) { throw 'Numeric and display versions disagree.' }
           if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -cne "v$version") {
             throw "Release tag must match version.h: v$version"
           }
-          if ((Get-Content vcpkg.json -Raw | ConvertFrom-Json).version -cne $version) {
+          if ((Get-Content vcpkg.json -Raw | ConvertFrom-Json).'version-semver' -cne $version) {
             throw 'vcpkg.json and version.h must have the same version.'
           }
           "version=$version" >> $env:GITHUB_OUTPUT
@@ -73,7 +78,8 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/vcpkg-binary-cache
-          key: windows-2022-v143-${{ hashFiles('vcpkg.json', '.github/vcpkg-triplets/**') }}
+          key: windows-2022-v143-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', '.github/vcpkg-triplets/**', '.github/vcpkg-overlay/**') }}
+          restore-keys: windows-2022-v143-
 
       - name: Install dependencies
         env:
@@ -99,6 +105,13 @@ jobs:
           msbuild w-image-viewer.sln /m /t:Build /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /p:VcpkgEnableManifest=true /p:VcpkgManifestInstall=false /p:VcpkgTriplet=x64-windows-static "/p:VcpkgInstalledDir=$env:GITHUB_WORKSPACE/vcpkg_installed/" "/p:OutDir=$env:GITHUB_WORKSPACE/build/" /verbosity:minimal
           if ($LASTEXITCODE -ne 0) { throw 'MSBuild failed.' }
 
+      - name: Build and run feature regression tests
+        run: |
+          msbuild tests/wiv-tests.vcxproj /m /t:Build /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /p:VcpkgEnableManifest=true /p:VcpkgManifestInstall=false /p:VcpkgTriplet=x64-windows-static "/p:VcpkgInstalledDir=$env:GITHUB_WORKSPACE/vcpkg_installed/" "/p:OutDir=$env:GITHUB_WORKSPACE/build/" /verbosity:minimal
+          if ($LASTEXITCODE -ne 0) { throw 'Regression test build failed.' }
+          & ./build/wiv-tests.exe ./tests/fixtures "${{ runner.temp }}/wiv-tests" | Tee-Object -FilePath build/test-results.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Feature regression tests failed.' }
+
       - name: Verify and package executable
         env:
           WIV_VERSION: ${{ steps.version.outputs.version }}
@@ -112,6 +125,18 @@ jobs:
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
+
+      - name: Upload validation tools and test results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: validation-${{ steps.version.outputs.version }}
+          path: |
+            build/wiv-tests.exe
+            build/test-results.txt
+            tests/fixtures/**
+          if-no-files-found: warn
+          retention-days: 7
 
   release:
     name: Publish GitHub Release
@@ -142,13 +167,23 @@ jobs:
 
           Download **w-image-viewer.exe** to run the application, or extract the portable ZIP to include the manual and license notices.
 
+          This beta adds all eight EXIF orientations, mouse-activated previous/next buttons, JPEG XL decoding, and AVIF decoding. Mixed-format folder navigation is preserved. The existing renderer targets SDR still images; AVIF output is currently 8-bit and animated formats display a still frame.
+
           Requires Windows x64 with DirectX 11 support and the [Microsoft Visual C++ x64 Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe) (including the OpenMP runtime).
 
           SHA-256 checksums are included in SHA256SUMS.txt.
           Built from commit ${GITHUB_SHA} by [GitHub Actions](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}).
           EOF
+          prerelease=false
+          if [[ "$RELEASE_VERSION" == *-beta.* ]]; then prerelease=true; fi
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            existing=$(gh release view "$RELEASE_TAG" --json isPrerelease --jq .isPrerelease)
+            [[ "$existing" == "$prerelease" ]] || { echo 'Existing release type mismatch'; exit 1; }
             gh release upload "$RELEASE_TAG" artifacts/* --clobber
           else
-            gh release create "$RELEASE_TAG" artifacts/* --verify-tag --latest --title "W Image Viewer ${RELEASE_VERSION}" --notes-file release-notes.md
+            if [[ "$prerelease" == true ]]; then
+              gh release create "$RELEASE_TAG" artifacts/* --verify-tag --prerelease --latest=false --title "W Image Viewer ${RELEASE_VERSION}" --notes-file release-notes.md
+            else
+              gh release create "$RELEASE_TAG" artifacts/* --verify-tag --latest --title "W Image Viewer ${RELEASE_VERSION}" --notes-file release-notes.md
+            fi
           fi

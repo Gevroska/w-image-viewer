@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals"><ProjectGuid>{19B57D3F-9C68-4C31-B80B-B09D08AF097C}</ProjectGuid><WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration"><ConfigurationType>Application</ConfigurationType><UseDebugLibraries>false</UseDebugLibraries><PlatformToolset>v143</PlatformToolset><CharacterSet>Unicode</CharacterSet></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup Label="Vcpkg"><VcpkgUseStatic>true</VcpkgUseStatic></PropertyGroup>
+  <PropertyGroup><TargetName>wiv-tests</TargetName><IntDir>$(ProjectDir)obj\</IntDir></PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile><LanguageStandard>stdcpp20</LanguageStandard><RuntimeLibrary>MultiThreaded</RuntimeLibrary><AdditionalIncludeDirectories>$(ProjectDir)..\w-image-viewer\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories><AdditionalOptions>/utf-8 /D "_CRT_SECURE_NO_WARNINGS" %(AdditionalOptions)</AdditionalOptions><PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile>
+    <Link><SubSystem>Console</SubSystem><AdditionalDependencies>$(CoreLibraryDependencies);bcrypt.lib;Shlwapi.lib;d3d11.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="tests.cpp" />
+    <ClCompile Include="..\w-image-viewer\src\image.cpp" />
+    <ClCompile Include="..\w-image-viewer\src\file_manager.cpp" />
+    <ClCompile Include="..\w-image-viewer\src\icc.cpp" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

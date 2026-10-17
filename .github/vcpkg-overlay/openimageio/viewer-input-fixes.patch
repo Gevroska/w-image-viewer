@@ -1,0 +1,142 @@
+--- a/src/jpegxl.imageio/jxlinput.cpp
++++ b/src/jpegxl.imageio/jxlinput.cpp
+@@ -52,7 +52,7 @@
+ private:
+     std::string m_filename;
+     int m_next_scanline;  // Which scanline is the next to read?
+-    uint32_t m_channels;
++    uint32_t m_channels = 0;
+     JxlDecoderPtr m_decoder;
+     JxlResizableParallelRunnerPtr m_runner;
+     std::unique_ptr<ImageSpec> m_config;  // Saved copy of configuration spec
+@@ -112,10 +112,10 @@
+ 
+     uint8_t magic[128] {};
+     const size_t numRead = ioproxy->pread(magic, sizeof(magic), 0);
+-    if (numRead != sizeof(magic))
+-        return false;
+-
+-    JxlSignature signature = JxlSignatureCheck(magic, sizeof(magic));
++    if (numRead < 2)
++        return false;
++
++    JxlSignature signature = JxlSignatureCheck(magic, numRead);
+     switch (signature) {
+     case JXL_SIG_CODESTREAM:
+     case JXL_SIG_CONTAINER: break;
+@@ -249,27 +249,27 @@
+             // Need to check how we can support bfloat16 if jpegxl supports it
+             bool is_float = info.exponent_bits_per_sample > 0;
+ 
+-            switch (info.bits_per_sample) {
+-            case 8:
++            if (info.xsize == 0 || info.ysize == 0 || info.xsize > 16384 || info.ysize > 16384
++                || (info.num_color_channels != 1 && info.num_color_channels != 3)) {
++                errorfmt("Unsupported JPEG XL dimensions or color channels");
++                return false;
++            }
++            if (is_float) {
++                jxl_data_type = JXL_TYPE_FLOAT;
++                m_data_type = TypeDesc::FLOAT;
++            } else if (info.bits_per_sample <= 8) {
+                 jxl_data_type = JXL_TYPE_UINT8;
+-                m_data_type   = TypeDesc::UINT8;
+-                break;
+-            case 16:
+-                jxl_data_type = is_float ? JXL_TYPE_FLOAT16 : JXL_TYPE_UINT16;
+-                m_data_type   = is_float ? TypeDesc::HALF : TypeDesc::UINT16;
+-                break;
+-            case 32:
+-                jxl_data_type = JXL_TYPE_FLOAT;
+-                m_data_type   = TypeDesc::FLOAT;
+-                break;
+-            default: errorfmt("Unsupported bits per sample\n"); return false;
+-            }
+-
+-            format = { m_channels, jxl_data_type, JXL_NATIVE_ENDIAN, 0 };
+-
+-            format.num_channels = info.num_color_channels
+-                                  + info.num_extra_channels;
+-            m_channels = info.num_color_channels + info.num_extra_channels;
++                m_data_type = TypeDesc::UINT8;
++            } else if (info.bits_per_sample <= 16) {
++                jxl_data_type = JXL_TYPE_UINT16;
++                m_data_type = TypeDesc::UINT16;
++            } else {
++                errorfmt("Unsupported JPEG XL sample depth");
++                return false;
++            }
++            // Interleaved output contains color and optional alpha, not spot/depth channels.
++            m_channels = info.num_color_channels + (info.alpha_bits > 0 ? 1 : 0);
++            format = {m_channels, jxl_data_type, JXL_NATIVE_ENDIAN, 0};
+             JxlResizableParallelRunnerSetThreads(
+                 m_runner.get(),
+                 JxlResizableParallelRunnerSuggestThreads(info.xsize,
+@@ -306,12 +306,9 @@
+                 errorfmt("JxlDecoderImageOutBufferSize failed\n");
+                 return false;
+             }
+-            if (buffer_size
+-                != info.xsize * info.ysize * m_channels * info.bits_per_sample
+-                       / 8) {
+-                errorfmt("Invalid out buffer size {} {}\n", buffer_size,
+-                         info.xsize * info.ysize * m_channels
+-                             * info.bits_per_sample / 8);
++            const size_t expected_size = size_t(info.xsize) * info.ysize * m_channels * m_data_type.size();
++            if (buffer_size != expected_size) {
++                errorfmt("Invalid JPEG XL output buffer size");
+                 return false;
+             }
+ 
+@@ -326,8 +323,8 @@
+         } else if (status == JXL_DEC_FULL_IMAGE) {
+             DBG std::cout << "JXL_DEC_FULL_IMAGE\n";
+ 
+-            // Nothing to do. Do not yet return. If the image is an animation, more
+-            // full frames may be decoded. This example only keeps the last one.
++            // A still-image viewer consistently displays the first complete frame.
++            break;
+         } else if (status == JXL_DEC_FRAME) {
+             DBG std::cout << "JXL_DEC_FRAME\n";
+ 
+@@ -346,6 +343,14 @@
+ 
+     m_spec = ImageSpec(info.xsize, info.ysize, m_channels, m_data_type);
+ 
++    if (!m_buffer) return false;
++    m_spec.alpha_channel = info.alpha_bits > 0 ? int(m_channels) - 1 : -1;
++    if (info.alpha_bits > 0 && !info.alpha_premultiplied)
++        m_spec.attribute("oiio:UnassociatedAlpha", 1);
++    m_spec.attribute("Orientation", 1); // libjxl has already normalized the codestream orientation.
++    m_spec.attribute("oiio:BitsPerSample", int(info.bits_per_sample));
++    if (!m_icc_profile.empty())
++        m_spec.attribute("ICCProfile", TypeDesc(TypeDesc::UINT8, int(m_icc_profile.size())), m_icc_profile.data());
+     newspec = m_spec;
+     return true;
+ }
+--- a/src/heif.imageio/heifinput.cpp
++++ b/src/heif.imageio/heifinput.cpp
+@@ -244,6 +244,23 @@
+                          TypeUInt8);
+ 
+     m_spec.set_colorspace("sRGB");
++    const auto* raw_handle = m_ihandle.get_raw_image_handle();
++    const size_t icc_size = heif_image_handle_get_raw_color_profile_size(raw_handle);
++    if (icc_size > 0 && icc_size <= 16777216) {
++        std::vector<uint8_t> icc(icc_size);
++        if (heif_image_handle_get_raw_color_profile(raw_handle, icc.data()).code == heif_error_Ok)
++            m_spec.attribute("ICCProfile", TypeDesc(TypeDesc::UINT8, int(icc.size())), icc.data());
++    }
++    heif_color_profile_nclx* nclx = nullptr;
++    if (heif_image_handle_get_nclx_color_profile(raw_handle, &nclx).code == heif_error_Ok && nclx) {
++        const float xy[] = {nclx->color_primary_white_x, nclx->color_primary_white_y,
++                            nclx->color_primary_red_x, nclx->color_primary_red_y,
++                            nclx->color_primary_green_x, nclx->color_primary_green_y,
++                            nclx->color_primary_blue_x, nclx->color_primary_blue_y};
++        m_spec.attribute("heif:Primaries", TypeDesc(TypeDesc::FLOAT, 8), xy);
++        m_spec.attribute("heif:TransferCharacteristics", int(nclx->transfer_characteristics));
++    }
++    if (nclx) heif_nclx_color_profile_free(nclx);
+ 
+ #if LIBHEIF_HAVE_VERSION(1, 12, 0)
+     // Libheif >= 1.12 added API call to find out if the image is associated

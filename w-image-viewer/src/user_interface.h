@@ -3,6 +3,7 @@
 #include "pch.h"
 #include "file_manager.h"
 #include "include\global.h"
+#include "include/navigation_visibility.h"
 
 enum WIV_OPEN_
 {
@@ -22,20 +23,25 @@ public:
     void reset_image_panzoom() noexcept;
     void slideshow();
     void toggle_fullscreen();
+    void navigate(int direction, bool automatic = false);
+    void on_image_opened(bool automatic);
+    void on_mouse_activity();
+    bool navigation_visible() const noexcept { return navigation_visibility_.alpha > 0.0f; }
     File_manager file_manager;
-    bool is_fullscreen;
-    bool is_dialog_file_open;
+    bool is_fullscreen = 0;
+    bool is_dialog_file_open = 0;
     ImVec2 image_pan;
-    bool is_panning;
-    float image_zoom;
-    bool is_zooming;
-    int image_rotation;
-    bool is_rotating;
+    bool is_panning = 0;
+    float image_zoom = 0;
+    bool is_zooming = 0;
+    int image_rotation = 0;
+    bool is_rotating = 0;
     
     // Request to show image at the original width and height.
-    bool image_no_scale;
+    bool image_no_scale = 0;
     
 private:
+    void navigation_controls();
     void input();
     void overlay() const;
     void context_menu();
@@ -44,10 +50,13 @@ private:
     void window_about();
     void dialog_file_open(WIV_OPEN_ file_type);
     bool is_overlay_open = g_config.overlay_show.val;
-    bool is_window_settings_open;
-    bool is_window_slideshow_open;
-    bool is_window_about_open;
-    bool* prenderer_should_update;
-    bool is_slideshow_start;
-    bool is_slideshow_playing;
+    bool is_window_settings_open = 0;
+    bool is_window_slideshow_open = 0;
+    bool is_window_about_open = 0;
+    bool* prenderer_should_update = nullptr;
+    bool is_slideshow_start = 0;
+    bool is_slideshow_playing = 0;
+    wiv::Navigation_visibility navigation_visibility_;
+    bool navigation_captures_mouse_ = false;
+    bool canvas_drag_ = false;
 };

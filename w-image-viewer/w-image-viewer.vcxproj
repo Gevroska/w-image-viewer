@@ -175,6 +175,8 @@
     <ClInclude Include="src\include\helpers.h" />
     <ClInclude Include="src\icc.h" />
     <ClInclude Include="src\image.h" />
+    <ClInclude Include="src\include\orientation.h" />
+    <ClInclude Include="src\include\navigation_visibility.h" />
     <ClInclude Include="src\include\cms_lut.h" />
     <ClInclude Include="src\include\info.h" />
     <ClInclude Include="src\include\range.h" />

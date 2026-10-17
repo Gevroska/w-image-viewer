@@ -2,9 +2,11 @@
 
 inline constexpr auto WIV_SUPPORTED_EXTENSIONS{ L""
     "*.tif;*.tiff;*.tx;*.env;*.sm;*.vsm;" // Tagged Image File Format (TIFF) 
-    "*.jpg;*jpeg;*.jpe;*.jif;*.jfif;*.jfi;" // Joint Photographic Experts group (JPEG)
+    "*.jpg;*.jpeg;*.jpe;*.jif;*.jfif;*.jfi;" // Joint Photographic Experts group (JPEG)
+    "*.jxl;" // JPEG XL
     "*.jp2;*.j2k;" // JPEG-2000
     "*.png;" // Portable Network Graphics (PNG)
+    "*.gif;" // Graphics Interchange Format (first frame)
     "*.bmp;*.rle;*.dib;" // Bitmap Image (BMP)
     "*.exr;*.sxr;*.mxr;" // OpenEXR
     "*.pbm;*.pgm;*.ppm;*.pnm;" // PNM / Netpbm

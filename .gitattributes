@@ -64,3 +64,4 @@
 
 # wiv
 *.h linguist-language=C++
+tests/fixtures/** -text

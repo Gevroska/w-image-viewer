@@ -7,10 +7,20 @@ class File_manager
 {
 public:
     bool file_open(const wchar_t* path);
-    void file_next();
-    void file_previous();
+    bool file_next();
+    bool file_previous();
+    bool can_navigate(int direction) const;
+    const Image* pending_image() const noexcept { return pending_.get(); }
+    void commit_open();
+    void cancel_open() noexcept { pending_.reset(); }
     bool drag_and_drop(HDROP hdrop);
     void delete_file();
     std::filesystem::path file_current;
     Image image;
+private:
+    bool navigate(int direction);
+    std::vector<std::filesystem::path> collect_files() const;
+    std::unique_ptr<Image> pending_;
+    std::filesystem::path pending_path_;
+    bool has_previous_ = false, has_next_ = false, has_alternative_ = false;
 };

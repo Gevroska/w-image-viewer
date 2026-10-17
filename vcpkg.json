@@ -1,12 +1,13 @@
 {
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
   "name": "w-image-viewer",
-  "version": "2.1.1",
+  "version-semver": "2.2.0-beta.1",
   "builtin-baseline": "66c0373dc7fca549e5803087b9487edfe3aca0a1",
   "dependencies": [
     { "name": "imgui", "features": ["dx11-binding", "win32-binding"] },
     "lcms",
     { "name": "libraw", "features": ["dng-lossy", "openmp"] },
-    { "name": "openimageio", "features": ["gif", "libheif", "libraw", "openjpeg", "webp"] }
+    { "name": "openimageio", "features": ["gif", "jpegxl", "libheif", "libraw", "openjpeg", "webp"] },
+    { "name": "libheif", "features": ["aom"] }
   ]
 }

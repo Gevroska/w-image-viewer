@@ -18,7 +18,7 @@ public:
     Window(HINSTANCE hinstance, int ncmdshow);
     int message_loop();
     Renderer renderer;
-    bool is_minimized;
+    bool is_minimized = false;
 private:
     static LRESULT wndproc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam);
     LRESULT handle_message(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam);

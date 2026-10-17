@@ -1,79 +1,32 @@
 #pragma once
 
 #include "pch.h"
-#include "include\shader_config.h"
-#include "include\info.h"
+#include "include/shader_config.h"
 
 class Image
 {
 public:
-    bool is_valid() const noexcept;
-    bool has_alpha() const noexcept;
+    bool is_valid() const noexcept { return !pixels_.empty(); }
+    bool has_alpha() const noexcept { return alpha_; }
     bool open(const std::filesystem::path& path);
     bool close() noexcept;
-    
-    // Should return OIIO::TypeDesc::BASETYPE,
-    // but it's returning unsigned char.
-    auto get_basetype() const noexcept
-    {
-        return image_input->spec().format.basetype;
-    }
-    
-    template<typename T>
-    T get_width() const noexcept
-    {
-        return static_cast<T>(image_input->spec().width);
-    }
-    
-    template<typename T>
-    T get_height() const noexcept
-    {
-        return static_cast<T>(image_input->spec().height);
-    }
-    
-    template<std::floating_point T>
-    T get_aspect() const noexcept
-    {
-        return get_width<T>() / get_height<T>();
-    }
-    
-    template<typename T>
-    std::unique_ptr<uint8_t[]> get_image_data()
-    {
-        const auto& spec = image_input->spec();
-        
-        // size = width * height * nchannels * bytedepth
-        auto data = std::make_unique_for_overwrite<uint8_t[]>(spec.width * spec.height * 4 * sizeof(T));
-        
-        image_input->read_image(0, 0, 0, -1, spec.format, data.get(), 4 * sizeof(T));
-        
-        // Convert a single channel greyscale image into multy channel greyscale image.
-        switch (spec.nchannels) {
-            case 1: // (grey null null null) into (grey grey grey null).
-                for (int i = 0; i < spec.width * spec.height; ++i) {
-                    reinterpret_cast<T*>(data.get())[4 * i + 2] = reinterpret_cast<T*>(data.get())[4 * i + 1] = reinterpret_cast<T*>(data.get())[4 * i];
-                }
-            break;
-            case 2: // (grey alpha null null) into (grey grey grey alpha)
-                for (int i = 0; i < spec.width * spec.height; ++i) {
-                    reinterpret_cast<T*>(data.get())[4 * i + 3] = reinterpret_cast<T*>(data.get())[4 * i + 1];
-                    reinterpret_cast<T*>(data.get())[4 * i + 2] = reinterpret_cast<T*>(data.get())[4 * i + 1] = reinterpret_cast<T*>(data.get())[4 * i];
-                }
-        }
-        
-        // At this point we dont need raw_input data anymore.
-        raw_input.recycle();
-        
-        Info::image_bitdepth = spec.channel_bytes() * 8;
-        Info::image_nchannels = spec.nchannels;
-        return data;
-    }
-    
-    int orientation;
-    std::unique_ptr<std::remove_pointer_t<cmsHPROFILE>, decltype(&cmsCloseProfile)> profile = { nullptr, cmsCloseProfile };
-    Tone_response_curve trc;
+    auto get_basetype() const noexcept { return format_.basetype; }
+    template<typename T> T get_width() const noexcept { return static_cast<T>(width_); }
+    template<typename T> T get_height() const noexcept { return static_cast<T>(height_); }
+    template<std::floating_point T> T get_aspect() const noexcept { return get_width<T>() / get_height<T>(); }
+    const uint8_t* pixels() const noexcept { return pixels_.data(); }
+    size_t pixel_bytes() const noexcept { return 4 * format_.size(); }
+    int bitdepth = 0;
+    int channels = 0;
+    std::string error;
+    std::unique_ptr<std::remove_pointer_t<cmsHPROFILE>, decltype(&cmsCloseProfile)> profile = {nullptr, cmsCloseProfile};
+    Tone_response_curve trc = {WIV_CMS_TRC_NONE, 0.0f};
 private:
-    void read_color_profile();
-    std::unique_ptr<OIIO::ImageInput> image_input;
-    LibRaw raw_input;
+    bool decode(const std::filesystem::path& path);
+    bool read_input(OIIO::ImageInput& input, int fallback_orientation = 1);
+    void read_color_profile(const OIIO::ImageSpec& spec);
+    std::vector<uint8_t> pixels_;
+    int width_ = 0, height_ = 0;
+    bool alpha_ = false;
+    OIIO::TypeDesc format_ = OIIO::TypeDesc::UINT8;
 };

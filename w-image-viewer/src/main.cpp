@@ -14,8 +14,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
     if (lpCmdLine[0] != '\0') {
         int argc;
         auto argv = CommandLineToArgvW(lpCmdLine, &argc);
-        window->renderer.ui.file_manager.file_open(argv[0]);
-        ensure(PostMessageW(g_hwnd, WIV_WM_OPEN_FILE, 0, 0), != 0);
+        if (argv && argc > 0 && window->renderer.ui.file_manager.file_open(argv[0]))
+            PostMessageW(g_hwnd, WIV_WM_OPEN_FILE, 0, 0);
         LocalFree(argv);
     }
 

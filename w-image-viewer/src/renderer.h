@@ -21,14 +21,15 @@ public:
     void init();
     void update();
     void draw() const;
-    void create_image();
+    bool create_image();
     void on_window_resize() noexcept;
     void reset_resources() noexcept;
-    void fullscreen_hide_cursor() const;
-    bool should_update;
+    void fullscreen_hide_cursor(bool force_visible = false);
+    bool should_update = false;
     User_interface ui;
 private:
-    std::unique_ptr<uint8_t[]> get_image_data(DXGI_FORMAT& format, UINT& sys_mem_pitch);
+    bool cursor_hidden_ = false;
+    const uint8_t* get_image_data(const Image& source, DXGI_FORMAT& format, UINT& sys_mem_pitch);
     void update_scale_and_dims_output() noexcept;
     void update_scale_profile() noexcept;
     void init_cms_profile_display();
@@ -55,7 +56,7 @@ private:
     const Config_scale* p_scale_profile;
     std::unique_ptr<std::remove_pointer_t<cmsHPROFILE>, decltype(&cmsCloseProfile)> cms_profile_display = { nullptr, cmsCloseProfile };
     Tone_response_curve trc;
-    bool is_cms_valid;
+    bool is_cms_valid = false;
     float sigmoidize_offset;
     float sigmoidize_scale;
 };

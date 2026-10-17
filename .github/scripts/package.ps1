@@ -11,7 +11,11 @@ if ([BitConverter]::ToUInt32($bytes, $peOffset) -ne 0x4550 -or
 }
 $fileVersion = $exe.VersionInfo
 $actualVersion = '{0}.{1}.{2}' -f $fileVersion.FileMajorPart, $fileVersion.FileMinorPart, $fileVersion.FileBuildPart
-if ($actualVersion -cne $Version) { throw "Executable version $actualVersion does not match $Version." }
+if ($actualVersion -cne ($Version -split '-')[0]) { throw "Executable version $actualVersion does not match $Version." }
+if ($fileVersion.ProductVersion -cne $Version -or $fileVersion.FileVersion -cne $Version) {
+    throw 'Executable string versions do not match the release version.'
+}
+if ($Version.Contains('-beta.') -and -not $fileVersion.IsPreRelease) { throw 'Missing Windows prerelease flag.' }
 
 New-Item -ItemType Directory -Force artifacts, package | Out-Null
 Copy-Item $exe.FullName artifacts/w-image-viewer.exe
