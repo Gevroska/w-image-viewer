@@ -110,7 +110,7 @@ void File_manager::delete_file()
     fileopenstruct.pFrom = path;
     fileopenstruct.fFlags = FOF_ALLOWUNDO;
 
-    if (SHFileOperationW(&fileopenstruct) == 0) {
+    if (SHFileOperationW(&fileopenstruct) == 0 && !fileopenstruct.fAnyOperationsAborted) {
         const bool opened = file_next() || file_previous();
         if (!opened) {
             image.close();
