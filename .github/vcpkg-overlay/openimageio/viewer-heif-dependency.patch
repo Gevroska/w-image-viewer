@@ -1,0 +1,22 @@
+--- a/src/cmake/externalpackages.cmake
++++ b/src/cmake/externalpackages.cmake
+@@ -173,6 +173,9 @@
+ # For HEIF/HEIC/AVIF formats
+ set(LIBHEIF_INCLUDES "")
+ set(LIBHEIF_LIBRARIES heif)
++if(USE_LIBHEIF)
++    find_package(AOM CONFIG REQUIRED)
++endif()
+ checked_find_package (Libheif VERSION_MIN 1.11
+                       RECOMMEND_MIN 1.16
+                       RECOMMEND_MIN_REASON "for orientation support")
+--- a/src/cmake/Config.cmake.in
++++ b/src/cmake/Config.cmake.in
+@@ -10,6 +10,7 @@
+     find_dependency(GIF)
+ endif()
+ if(@USE_LIBHEIF@)
++    find_dependency(AOM CONFIG)
+     find_dependency(libheif CONFIG)
+ endif()
+ if(@USE_FREETYPE@)

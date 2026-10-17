@@ -6,6 +6,7 @@ set(PATCHES
     imath-version-guard.patch
     fix-openimageio_include_dir.patch
     fix-openexr-target-missing.patch
+    viewer-heif-dependency.patch
 )
 
 if(VCPKG_TARGET_IS_OSX)
