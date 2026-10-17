@@ -11,6 +11,7 @@ inline constexpr auto WIV_WINDOW_EX_STYLE = WS_EX_ACCEPTFILES;
 // Window messages.
 inline constexpr auto WIV_WM_OPEN_FILE = WM_USER + 0;
 inline constexpr auto WIV_WM_RESET_RESOURCES = WM_USER + 1;
+inline constexpr auto WIV_WM_SHOW_CURSOR = WM_USER + 2;
 
 class Window
 {

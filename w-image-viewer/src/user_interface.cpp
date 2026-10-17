@@ -957,6 +957,7 @@ void User_interface::dialog_file_open(WIV_OPEN_ file_type)
         return;
     }
     is_dialog_file_open = true;
+    SendMessageW(g_hwnd, WIV_WM_SHOW_CURSOR, 0, 0);
     Com_ptr<IFileOpenDialog> file_open_dialog;
     if (SUCCEEDED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_ALL, IID_PPV_ARGS(file_open_dialog.put())))) {
         COMDLG_FILTERSPEC filterspec = {};
@@ -987,6 +988,7 @@ void User_interface::dialog_file_open(WIV_OPEN_ file_type)
     }
     CoUninitialize();
     is_dialog_file_open = false;
+    on_mouse_activity();
 }
 
 void User_interface::toggle_fullscreen()

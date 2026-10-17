@@ -64,7 +64,9 @@ bool Image::decode(const std::filesystem::path& path)
             auto input = OIIO::ImageInput::open("thumbnail.jpg", &config, &reader);
             const int flip = raw.imgdata.sizes.flip;
             const int orientation = flip == 3 ? 3 : flip == 5 ? 8 : flip == 6 ? 6 : 1;
-            if (input && read_input(*input, orientation)) return true;
+            const bool known_flip = flip == 0 || flip == 3 || flip == 5 || flip == 6;
+            if (input && (known_flip || input->spec().find_attribute("Orientation"))
+                && read_input(*input, orientation)) return true;
             // Unsupported bitmap thumbnails and broken JPEG thumbnails use full RAW decoding.
             pixels_.clear();
             profile.reset();

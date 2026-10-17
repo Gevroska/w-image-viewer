@@ -131,6 +131,9 @@ LRESULT Window::handle_message(HWND hwnd, UINT message, WPARAM wparam, LPARAM lp
             set_window_name();
             renderer.should_update = true;
             return 0;
+        case WIV_WM_SHOW_CURSOR:
+            renderer.fullscreen_hide_cursor(true);
+            return 0;
         case WM_SIZING:
             if (g_config.window_keep_aspect.val && renderer.ui.file_manager.image.is_valid()) {
                 auto rect = reinterpret_cast<RECT*>(lparam);
