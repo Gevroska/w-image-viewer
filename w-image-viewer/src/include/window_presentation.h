@@ -72,7 +72,7 @@ public:
         active_ = transitioning_ = true;
         if (!set_style(window, GWL_STYLE, fullscreen_style())
             || !position(window, monitor.info.rcMonitor)) {
-            set_style(window, GWL_STYLE, style_);
+            set_style(window, GWL_STYLE, style_ & ~LONG_PTR(WS_MAXIMIZE | WS_MINIMIZE));
             SetWindowPlacement(window, &placement_);
             SetWindowPos(window, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
             active_ = transitioning_ = false;

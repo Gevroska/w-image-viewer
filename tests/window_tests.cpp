@@ -27,6 +27,9 @@ int window_presentation_tests()
         }, reinterpret_cast<LPARAM>(&monitors));
     }
     check(!monitors.empty(), "No monitor available for integration tests");
+    wiv::Fullscreen_window invalid_window;
+    check(!invalid_window.enter(nullptr) && !invalid_window.active(), "Failed fullscreen entry changed active state");
+    check(invalid_window.leave(nullptr), "Inactive fullscreen restoration failed");
     for (auto context : {DPI_AWARENESS_CONTEXT_UNAWARE, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2}) {
         SetThreadDpiAwarenessContext(context);
         for (HMONITOR handle : monitors) {
