@@ -149,7 +149,8 @@ void encode_jxl(const fs::path& path, int bits, int orientation, int channels, c
     std::vector<uint8_t> pixels(6 * channels * bytes);
     for (int p = 0; p < 6; ++p) {
         for (int c = 0; c < channels; ++c) {
-            const uint16_t value = (c == channels - 1 && info.num_extra_channels) ? (p % 2 ? 65535 : 32896) : uint16_t((p + 1) * 65535 / 6);
+            const int color_label = info.num_color_channels == 1 || c == 0 ? p + 1 : c == 1 ? 6 - p : (2 * p) % 6 + 1;
+            const uint16_t value = (c == channels - 1 && info.num_extra_channels) ? (p % 2 ? 65535 : 32896) : uint16_t(color_label * 65535 / 6);
             if (bytes == 1) pixels[p * channels + c] = uint8_t(value / 257);
             else reinterpret_cast<uint16_t*>(pixels.data())[p * channels + c] = value;
         }
@@ -179,9 +180,13 @@ void jxl_tests(const fs::path& scratch)
             CHECK(image.get_height<int>() == (orientation >= 5 ? 3 : 2));
             CHECK(image.profile != nullptr);
             for (int p = 0; p < 6; ++p) {
-                const int actual = bits <= 8 ? image.pixels()[p * 4] : reinterpret_cast<const uint16_t*>(image.pixels())[p * 4];
-                const int target = bits <= 8 ? (expected[orientation - 1][p] * 65535 / 6) / 257 : expected[orientation - 1][p] * 65535 / 6;
-                CHECK(std::abs(actual - target) <= (bits <= 8 ? 1 : 128));
+                const int label = expected[orientation - 1][p];
+                const int labels[] = {label, 7 - label, (2 * (label - 1)) % 6 + 1};
+                for (int c = 0; c < 3; ++c) {
+                    const int actual = bits <= 8 ? image.pixels()[p * 4 + c] : reinterpret_cast<const uint16_t*>(image.pixels())[p * 4 + c];
+                    const int target = bits <= 8 ? (labels[c] * 65535 / 6) / 257 : labels[c] * 65535 / 6;
+                    CHECK(std::abs(actual - target) <= (bits <= 8 ? 1 : 128));
+                }
             }
         }
     }
@@ -191,7 +196,8 @@ void jxl_tests(const fs::path& scratch)
         Image image;
         CHECK(image.open(path));
         CHECK(image.has_alpha() == (channels != 1));
-        CHECK(image.pixels()[0] == image.pixels()[1] && image.pixels()[1] == image.pixels()[2]);
+        if (channels <= 2) CHECK(image.pixels()[0] == image.pixels()[1] && image.pixels()[1] == image.pixels()[2]);
+        if (channels == 4) CHECK(image.pixels()[1] == 128 && image.pixels()[2] == 21);
         if (channels != 1) { CHECK(image.pixels()[3] == 128); CHECK(std::abs(int(image.pixels()[0]) - 21) <= 1); }
     }
     std::cout << "PASS: JPEG XL 8/10/12/16-bit, all native orientations, grayscale, alpha, ICC profiles\n";
