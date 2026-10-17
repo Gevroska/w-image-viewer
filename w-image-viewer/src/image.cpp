@@ -34,12 +34,12 @@ template<class T> void finish_channels(std::vector<uint8_t>& pixels, bool gray, 
 }
 }
 
-bool Image::open(const std::filesystem::path& path)
+bool Image::open(const std::filesystem::path& path, Decode_options options)
 {
     // Decode into a candidate; a bad neighbor must not destroy the current image.
     try {
         Image candidate;
-        if (!candidate.decode(path)) { error = candidate.error; return false; }
+        if (!candidate.decode(path, options)) { error = candidate.error; return false; }
         *this = std::move(candidate);
         return true;
     } catch (const std::exception& exception) {
@@ -48,15 +48,17 @@ bool Image::open(const std::filesystem::path& path)
     }
 }
 
-bool Image::decode(const std::filesystem::path& path)
+bool Image::decode(const std::filesystem::path& path, Decode_options options)
 {
     OIIO::ImageSpec config;
     config.attribute("bmp:monochrome_detect", 0);
     // Normalize association here, after selecting the display channels.
     config.attribute("oiio:UnassociatedAlpha", 1);
+    if (!options.apply_metadata_orientation) config.attribute("raw:user_flip", 0);
 
-    if (g_config.raw_thumb.val) {
+    if (options.raw_thumbnail) {
         LibRaw raw;
+        if (!options.apply_metadata_orientation) raw.imgdata.params.user_flip = 0;
         if (raw.open_file(path.c_str()) == LIBRAW_SUCCESS && raw.unpack_thumb() == LIBRAW_SUCCESS
             && raw.imgdata.thumbnail.tformat == LIBRAW_THUMBNAIL_JPEG) {
             // Both the RAW owner and its memory reader outlive the complete decode.
@@ -65,8 +67,8 @@ bool Image::decode(const std::filesystem::path& path)
             const int flip = raw.imgdata.sizes.flip;
             const int orientation = flip == 3 ? 3 : flip == 5 ? 8 : flip == 6 ? 6 : 1;
             const bool known_flip = flip == 0 || flip == 3 || flip == 5 || flip == 6;
-            if (input && (known_flip || input->spec().find_attribute("Orientation"))
-                && read_input(*input, orientation)) return true;
+            if (input && (!options.apply_metadata_orientation || known_flip || input->spec().find_attribute("Orientation"))
+                && read_input(*input, options, orientation)) return true;
             // Unsupported bitmap thumbnails and broken JPEG thumbnails use full RAW decoding.
             pixels_.clear();
             profile.reset();
@@ -76,10 +78,10 @@ bool Image::decode(const std::filesystem::path& path)
     const auto utf8 = path.u8string();
     auto input = OIIO::ImageInput::open(std::string(reinterpret_cast<const char*>(utf8.data()), utf8.size()), &config);
     if (!input) { error = OIIO::geterror(); return false; }
-    return read_input(*input);
+    return read_input(*input, options);
 }
 
-bool Image::read_input(OIIO::ImageInput& input, int fallback_orientation)
+bool Image::read_input(OIIO::ImageInput& input, Decode_options options, int fallback_orientation)
 {
     const auto& spec = input.spec();
     constexpr int max_dimension = 16384; // D3D11 2D texture limit.
@@ -133,6 +135,7 @@ bool Image::read_input(OIIO::ImageInput& input, int fallback_orientation)
         default: finish_channels<float>(pixels_, gray, associate); break;
     }
     int orientation = spec.get_int_attribute("Orientation", fallback_orientation);
+    if (!options.apply_metadata_orientation) orientation = 1;
     // These decoders own their codestream/container/RAW transforms. EXIF copies are not authoritative.
     const std::string_view decoder = input.format_name();
     if (decoder == "jpegxl" || decoder == "heif" || decoder == "raw") orientation = 1;

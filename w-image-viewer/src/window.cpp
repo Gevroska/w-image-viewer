@@ -17,7 +17,7 @@ namespace
     constexpr auto WIV_WINDOW_NAME = L"W Image Viewer";
 }
 
-Window::Window(HINSTANCE hinstance, int ncmdshow)
+Window::Window(HINSTANCE hinstance, int ncmdshow, const std::wstring& startup_file)
 {
     // Register window class.
     WNDCLASSEXW wndclassexw = {};
@@ -37,10 +37,13 @@ Window::Window(HINSTANCE hinstance, int ncmdshow)
     g_hwnd = CreateWindowExW(WIV_WINDOW_EX_STYLE, wndclassexw.lpszClassName, WIV_WINDOW_NAME, WIV_WINDOW_STYLE, CW_USEDEFAULT, CW_USEDEFAULT, rc_w<int>(rect), rc_h<int>(rect), nullptr, nullptr, hinstance, this);
     assert(g_hwnd);
 
-    if (g_config.start_fullscreen.val) {
-        renderer.ui.toggle_fullscreen();
-    }
     renderer.init();
+    if (g_config.start_fullscreen.val) renderer.ui.toggle_fullscreen();
+    const bool opened = !startup_file.empty() && renderer.ui.file_manager.file_open(startup_file.c_str())
+        && finish_image_open(wiv::Open_reason::Startup, false);
+    const bool minimized = ncmdshow == SW_SHOWMINIMIZED || ncmdshow == SW_MINIMIZE || ncmdshow == SW_SHOWMINNOACTIVE;
+    if (opened && !minimized && wiv::maximize_on_open(wiv::Open_reason::Startup,
+            g_config.window_maximize_on_open.val, renderer.ui.is_fullscreen())) ncmdshow = SW_SHOWMAXIMIZED;
     ShowWindow(g_hwnd, ncmdshow);
 }
 
@@ -121,16 +124,15 @@ LRESULT Window::handle_message(HWND hwnd, UINT message, WPARAM wparam, LPARAM lp
             return 0;
 
         case WIV_WM_OPEN_FILE:
-            if (!renderer.create_image()) return 0;
-            if (g_config.window_autowh.val) {
-                renderer.ui.auto_window_size();
-            }
-            renderer.ui.on_image_opened(wparam != 0);
-            renderer.ui.reset_image_panzoom();
-            reset_image_rotation();
-            set_window_name();
+            finish_image_open(static_cast<wiv::Open_reason>(wparam));
+            return 0;
+        case WM_DISPLAYCHANGE:
+            renderer.ui.refresh_monitor(false);
             renderer.should_update = true;
             return 0;
+        case WM_WINDOWPOSCHANGED:
+            renderer.ui.refresh_monitor(true);
+            break; // DefWindowProc must still generate WM_SIZE/WM_MOVE.
         case WIV_WM_SHOW_CURSOR:
             renderer.fullscreen_hide_cursor(true);
             return 0;
@@ -145,7 +147,7 @@ LRESULT Window::handle_message(HWND hwnd, UINT message, WPARAM wparam, LPARAM lp
                 const auto client_height = rc_h<double>(unadjusted_rect);
 
                 auto image_aspect = renderer.ui.file_manager.image.get_aspect<double>();
-                if (renderer.ui.image_rotation % 180) image_aspect = 1.0 / image_aspect;
+                if (renderer.ui.image_rotation() % 180) image_aspect = 1.0 / image_aspect;
                 const auto new_client_width = std::lround(client_height * image_aspect - client_width);
                 const auto new_client_height = std::lround(client_width / image_aspect - client_height);
                 switch (wparam) {
@@ -176,7 +178,7 @@ LRESULT Window::handle_message(HWND hwnd, UINT message, WPARAM wparam, LPARAM lp
         case WM_DROPFILES:
             ensure(SetForegroundWindow(hwnd), != 0);
             if (renderer.ui.file_manager.drag_and_drop(reinterpret_cast<HDROP>(wparam)))
-                PostMessageW(hwnd, WIV_WM_OPEN_FILE, 0, 0);
+                PostMessageW(hwnd, WIV_WM_OPEN_FILE, static_cast<WPARAM>(wiv::Open_reason::ExplicitOpen), 0);
             return 0;
         case WIV_WM_RESET_RESOURCES:
             renderer.reset_resources();
@@ -207,8 +209,24 @@ void Window::set_window_name() const
     ensure(SetWindowTextW(g_hwnd, name.c_str()), != 0);
 }
 
-void Window::reset_image_rotation() noexcept
+bool Window::finish_image_open(wiv::Open_reason reason, bool show_window)
 {
-    // Decoder orientation is already normalized in the uploaded image.
-    renderer.ui.image_rotation = 0;
+    const bool reload = reason == wiv::Open_reason::SettingsReload;
+    if (!renderer.create_image()) {
+        if (reload) renderer.ui.finish_settings_reload(false, "The image could not be uploaded to the graphics device.");
+        return false;
+    }
+    if (reload) renderer.ui.finish_settings_reload(true);
+    renderer.ui.reset_image_panzoom();
+    renderer.ui.update_image_orientation(true);
+    if (!reload) {
+        const bool maximize = wiv::maximize_on_open(reason, g_config.window_maximize_on_open.val, renderer.ui.is_fullscreen());
+        if (maximize) {
+            if (show_window) ShowWindow(g_hwnd, SW_MAXIMIZE);
+        } else if (g_config.window_autowh.val) renderer.ui.auto_window_size();
+        renderer.ui.on_image_opened(reason == wiv::Open_reason::Slideshow);
+    }
+    set_window_name();
+    renderer.should_update = true;
+    return true;
 }

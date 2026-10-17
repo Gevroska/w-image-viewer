@@ -15,6 +15,9 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="tests.cpp" />
+    <ClCompile Include="window_tests.cpp" />
+    <ClCompile Include="policy_tests.cpp" />
+    <ClCompile Include="..\w-image-viewer\src\config.cpp" />
     <ClCompile Include="..\w-image-viewer\src\image.cpp" />
     <ClCompile Include="..\w-image-viewer\src\file_manager.cpp" />
     <ClCompile Include="..\w-image-viewer\src\icc.cpp" />

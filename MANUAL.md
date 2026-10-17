@@ -24,11 +24,16 @@
 You can access the settings window by right clicking anywhere inside the application window to open the context menu, then chose `Settings...`.
 
 - Currently inactive options will be dimmed out.
-- You can save settings to config file by clicking `Write changes` button under `Changes` subsection. Config file `config.txt` should be automatically created in the same directory W Image Viewer .exe file is.
+- Save settings with `Write changes` under `Changes`. The `config.dat` file is stored beside the executable.
 - You can revert to last written changes by clicking on `Revert changes` button under `Changes` subsection.
 - Some changes will be applied only after application restart.
 
 ### Window
+
+`Maximize when opening a file` (enabled by default)  
+Maximizes after a successful startup image, Open, or drag-and-drop. Next/Previous and slideshow preserve the window state. `Start fullscreen` takes precedence. Default dimensions remain the normal restore size. Changing this preference affects subsequent file opens.
+
+Fullscreen occupies the monitor containing most of the viewer window. Leaving fullscreen restores its previous normal or maximized placement. Automatic window sizing uses that monitor's work area, including monitors to the left or above the primary display.
 
 `Default dimensions:`  
 Default window client area width and height in pixels. Click on `Use current dimensions` button to use current window client area dimensions.
@@ -51,7 +56,21 @@ If `Enable auto dimensions` is enabled it will also ceter window on screen.
 `Background color`  
 Color of the background when no image is opened or when the opened image is not covering entire client area of the window.
 
+### Image orientation
+
+`Apply EXIF/camera orientation` (enabled by default)  
+Applies all eight EXIF orientations and RAW camera orientation. Disable it to display stored pixels without these metadata transforms. Native JPEG XL codestream and HEIF/AVIF container transformations remain applied, including container cropping. A RAW preview whose pixels were already physically rotated cannot be restored to sensor order by ignoring metadata.
+
+Changing this setting reloads the current file safely and resets it to centered Fit. A failed reload retains the previous image, view and setting. Reloading does not maximize or resize the window, advance navigation, or restart the slideshow interval. Revert changes also updates the current image when its orientation preference changes.
+
+`Align long edge with the monitor` (disabled by default)  
+Available when EXIF/camera orientation is disabled. A portrait image turns 90 degrees clockwise on a landscape monitor; a landscape image turns on a portrait monitor. The monitor's shape is used even in a narrow window. Square images or monitors receive no additional turn.
+
+Alignment follows monitor changes and display rotation, not ordinary window resizing. Manual rotation overrides it for the current image. Opening another image or changing this preference resets that override. Ctrl+0 resets pan/zoom without discarding manual rotation.
+
 ### Scale
+
+Fit already enlarges small images as well as shrinking large ones. Ctrl+1 selects original size; Ctrl+0 returns to Fit. Beta.2 does not change this scaling policy.
 
 `Profiles:`  
 - The left input field is for the lower bound of the scale factor range, and right input field is for the upper bound of the scale factor range. The range is right-open "[a, b)". After that you can click on `Add profile` to add it to the list of profiles, or `Edit profile` to edit currently selected profile (you can't edit the default profile `0.000000, 0.000000`).

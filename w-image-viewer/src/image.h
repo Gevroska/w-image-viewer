@@ -3,12 +3,17 @@
 #include "pch.h"
 #include "include/shader_config.h"
 
+struct Decode_options {
+    bool apply_metadata_orientation = true;
+    bool raw_thumbnail = true;
+};
+
 class Image
 {
 public:
     bool is_valid() const noexcept { return !pixels_.empty(); }
     bool has_alpha() const noexcept { return alpha_; }
-    bool open(const std::filesystem::path& path);
+    bool open(const std::filesystem::path& path, Decode_options options = {});
     bool close() noexcept;
     auto get_basetype() const noexcept { return format_.basetype; }
     template<typename T> T get_width() const noexcept { return static_cast<T>(width_); }
@@ -22,8 +27,8 @@ public:
     std::unique_ptr<std::remove_pointer_t<cmsHPROFILE>, decltype(&cmsCloseProfile)> profile = {nullptr, cmsCloseProfile};
     Tone_response_curve trc = {WIV_CMS_TRC_NONE, 0.0f};
 private:
-    bool decode(const std::filesystem::path& path);
-    bool read_input(OIIO::ImageInput& input, int fallback_orientation = 1);
+    bool decode(const std::filesystem::path& path, Decode_options options);
+    bool read_input(OIIO::ImageInput& input, Decode_options options, int fallback_orientation = 1);
     void read_color_profile(const OIIO::ImageSpec& spec);
     std::vector<uint8_t> pixels_;
     int width_ = 0, height_ = 0;

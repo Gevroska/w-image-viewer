@@ -41,8 +41,8 @@ struct Scale_profile
 class Config
 {
 public:
-    void read();
-    void write();
+    void read(const std::filesystem::path& directory = {});
+    void write(const std::filesystem::path& directory = {});
     void read_slideshow();
     void write_slideshow();
 
@@ -55,6 +55,9 @@ public:
     
     Config_pair<bool, "waw"> window_autowh;
     Config_pair<bool, "wac"> window_autowh_center;
+    Config_pair<bool, "wmo"> window_maximize_on_open = { true };
+    Config_pair<bool, "imo"> image_apply_metadata_orientation = { true };
+    Config_pair<bool, "ile"> image_align_long_edge = { false };
     Config_pair<int, "wn"> window_name = { 1 };
     Config_pair<std::array<float, 4>, "clrc"> clear_color = { 0.5f, 0.5f, 0.5f, 1.0f };
     Config_pair<float, "atsz"> alpha_tile_size = { 8.0 };

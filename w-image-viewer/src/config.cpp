@@ -26,13 +26,16 @@ section_key=value
 
 */
 
-void Config::read()
+void Config::read(const std::filesystem::path& directory)
 {
-    auto file = std::ifstream(get_path() / L"config.dat");
+    window_maximize_on_open.val = true;
+    image_apply_metadata_orientation.val = true;
+    image_align_long_edge.val = false;
+    auto file = std::ifstream((directory.empty() ? get_path() : directory) / L"config.dat");
     
     // If we don't have a config write a new one with default values.
     if (!file.is_open()) {
-        write();
+        write(directory);
         return;
     }
 
@@ -42,6 +45,8 @@ void Config::read()
     Config_scale scale;
     scale_profiles.clear();
     while (std::getline(file, line)) {
+
+        if (line.empty()) continue;
 
         // Check for sections.
         if (line[0] == '#' && line[1] != '#')
@@ -87,10 +92,10 @@ void Config::read()
     }
 }
 
-void Config::write()
+void Config::write(const std::filesystem::path& directory)
 {
     // Top level
-    auto file = std::ofstream(get_path() / L"config.dat");
+    auto file = std::ofstream((directory.empty() ? get_path() : directory) / L"config.dat");
     if (!file.is_open()) {
         return;
     }
@@ -180,6 +185,9 @@ void Config::read_top_level(const std::string& key, const std::string& val)
     read(window_keep_aspect)
     read(window_autowh)
     read(window_autowh_center)
+    read(window_maximize_on_open)
+    read(image_apply_metadata_orientation)
+    read(image_align_long_edge)
     read(window_name)
     read_array(clear_color)
     read(alpha_tile_size)
@@ -263,6 +271,9 @@ void Config::write_top_level(std::ofstream& file)
     write(window_keep_aspect)
     write(window_autowh)
     write(window_autowh_center)
+    write(window_maximize_on_open)
+    write(image_apply_metadata_orientation)
+    write(image_align_long_edge)
     write(window_name)
     write_array(clear_color)
     write(alpha_tile_size)

@@ -8,16 +8,14 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
 {
     g_config.read();
     g_config.read_slideshow();
-    auto window = std::make_unique<Window>(hInstance, nCmdShow);
-
-    // "direct" file open.
-    if (lpCmdLine[0] != '\0') {
-        int argc;
+    std::wstring startup_file;
+    if (lpCmdLine[0] != L'\0') {
+        int argc = 0;
         auto argv = CommandLineToArgvW(lpCmdLine, &argc);
-        if (argv && argc > 0 && window->renderer.ui.file_manager.file_open(argv[0]))
-            PostMessageW(g_hwnd, WIV_WM_OPEN_FILE, 0, 0);
+        if (argv && argc > 0) startup_file = argv[0];
         LocalFree(argv);
     }
+    auto window = std::make_unique<Window>(hInstance, nCmdShow, startup_file);
 
     return window->message_loop();
 }

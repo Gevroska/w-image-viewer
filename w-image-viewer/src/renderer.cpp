@@ -199,7 +199,7 @@ void Renderer::reset_resources() noexcept
 // This is defined here only cause of code organization.
 void Renderer::fullscreen_hide_cursor(bool force_visible)
 {
-    const bool hide = !force_visible && ui.is_fullscreen && GetForegroundWindow() == g_hwnd
+    const bool hide = !force_visible && ui.is_fullscreen() && GetForegroundWindow() == g_hwnd
         && !ImGui::GetIO().WantCaptureMouse && !ui.is_dialog_file_open && !ui.navigation_visible();
     if (hide == cursor_hidden_) return;
     if (hide) { while (ShowCursor(FALSE) >= 0) {} }
@@ -225,7 +225,7 @@ void Renderer::update_scale_and_dims_output() noexcept
 	auto image_h = image.get_height<float>();
 
 	// Check is the rotation angele divisible by 180, if it is we dont need to swap width and height.
-	if (ui.image_rotation % 180)
+	if (ui.image_rotation() % 180)
 		std::swap(image_w, image_h);
 
 	float auto_zoom;
@@ -254,7 +254,7 @@ void Renderer::update_scale_and_dims_output() noexcept
 	Info::scale = scale;
 	Info::scaled_width = dims_output.width;
 	Info::scaled_height = dims_output.height;
-	if (ui.image_rotation % 180) std::swap(Info::scaled_width, Info::scaled_height);
+	if (ui.image_rotation() % 180) std::swap(Info::scaled_width, Info::scaled_height);
 }
 
 void Renderer::update_scale_profile() noexcept
@@ -643,16 +643,16 @@ void Renderer::pass_cylindrical_resample()
 void Renderer::update_final_pass()
 {
     float display_width = dims_output.get_width<float>(), display_height = dims_output.get_height<float>();
-    if (ui.image_rotation % 180) std::swap(display_width, display_height);
+    if (ui.image_rotation() % 180) std::swap(display_width, display_height);
 	Com_ptr<ID3D11Buffer> cb0;
 	if (image.has_alpha()) {
 		alignas(16) Cb_data data[3];
 		data[0].x.f = display_width / g_config.alpha_tile_size.val; // size.x
 		data[0].y.f = display_height / g_config.alpha_tile_size.val; // size.y
-		data[0].z.f = ui.image_rotation; // theta
+		data[0].z.f = ui.image_rotation(); // theta
 
 		// Check is theta divisible by 360, if it is we dont need to rotate texcoord.
-		data[0].w.i = ui.image_rotation % 360; // rotate
+		data[0].w.i = ui.image_rotation() % 360; // rotate
 
 		data[1].x.f = g_config.alpha_tile1_color.val[0]; // tile1.x
 		data[1].y.f = g_config.alpha_tile1_color.val[1]; // tile1.y
@@ -665,10 +665,10 @@ void Renderer::update_final_pass()
 	}
 	else {
 		alignas(16) Cb_data data[1];
-		data[0].x.f = ui.image_rotation; // theta
+		data[0].x.f = ui.image_rotation(); // theta
 
 		// Check is theta divisible by 360, if it is we dont need to rotate texcoord.
-		data[0].y.i = ui.image_rotation % 360; // rotate
+		data[0].y.i = ui.image_rotation() % 360; // rotate
 
 		create_constant_buffer(sizeof(data), &data, cb0.put());
 		create_pixel_shader(PS_SAMPLE, sizeof(PS_SAMPLE));

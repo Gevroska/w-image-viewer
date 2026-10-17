@@ -9,11 +9,17 @@
 
 bool File_manager::file_open(const wchar_t* path)
 {
+    return file_open(path, {g_config.image_apply_metadata_orientation.val, g_config.raw_thumb.val});
+}
+
+bool File_manager::file_open(const wchar_t* path, Decode_options options)
+{
     std::error_code error;
     auto absolute = std::filesystem::absolute(path, error).lexically_normal();
-    if (error) return false;
+    if (error) { last_error = error.message(); return false; }
     auto candidate = std::make_unique<Image>();
-    if (!candidate->open(absolute)) return false;
+    if (!candidate->open(absolute, options)) { last_error = candidate->error; return false; }
+    last_error.clear();
     pending_ = std::move(candidate);
     pending_path_ = std::move(absolute);
     return true;
@@ -118,6 +124,6 @@ void File_manager::delete_file()
             ensure(PostMessageW(g_hwnd, WIV_WM_RESET_RESOURCES, 0, 0), != 0);
         }
         else
-            ensure(PostMessageW(g_hwnd, WIV_WM_OPEN_FILE, 0, 0), != 0);
+            ensure(PostMessageW(g_hwnd, WIV_WM_OPEN_FILE, static_cast<WPARAM>(wiv::Open_reason::Navigation), 0), != 0);
     }
 }

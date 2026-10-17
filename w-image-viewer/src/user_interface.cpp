@@ -120,36 +120,19 @@ void User_interface::draw() const
 
 void User_interface::auto_window_size() const
 {
-    if (is_fullscreen || IsZoomed(g_hwnd)) {
-        return;
-    }
-    RECT rect;
-    
-    // We need RECT::top if we are not centering window.
-    if (!g_config.window_autowh_center.val) {
-        GetWindowRect(g_hwnd, &rect);
-    }
-    else {
-        rect.top = 0;
-    }
-
-    const double screen_width = GetSystemMetrics(SM_CXVIRTUALSCREEN);
-    const double screen_height = GetSystemMetrics(SM_CYVIRTUALSCREEN);
-    
-    // If the image resolution is larger than the screen resolution * 0.9, downsize the window to screen resolution * 0.9 with the aspect ratio of the image.
-    const double image_width = file_manager.image.get_width<double>();
-    const double image_height = file_manager.image.get_height<double>();
-    const double scale_factor = std::min(std::min(screen_width * 0.9 / image_width, (screen_height - rect.top) * 0.9 / image_height), 1.0);
-    rect.right = std::lround(image_width * scale_factor);
-    rect.bottom = std::lround(image_height * scale_factor);
-    rect.left = 0;
-    rect.top = 0;
-
-    AdjustWindowRectEx(&rect, WIV_WINDOW_STYLE, FALSE, WIV_WINDOW_EX_STYLE);
-
-    // Optionaly center the window and apply new dimensions.
-    const UINT flags = static_cast<UINT>(g_config.window_autowh_center.val ? SWP_NOZORDER | SWP_NOCOPYBITS : SWP_NOZORDER | SWP_NOMOVE | SWP_NOCOPYBITS);
-    SetWindowPos(g_hwnd, HWND_TOP, (screen_width - rc_w<double>(rect)) / 2.0, (screen_height - rc_h<double>(rect)) / 2.0, rc_w<int>(rect), rc_h<int>(rect), flags);
+    if (is_fullscreen() || IsZoomed(g_hwnd) || !file_manager.image.is_valid()) return;
+    wiv::Monitor_coordinates coordinates;
+    const auto monitor = wiv::window_monitor(g_hwnd);
+    RECT current{}, frame{};
+    if (!monitor.valid() || !GetWindowRect(g_hwnd, &current)) return;
+    if (!AdjustWindowRectEx(&frame, GetWindowLongPtrW(g_hwnd, GWL_STYLE), FALSE,
+                           GetWindowLongPtrW(g_hwnd, GWL_EXSTYLE))) return;
+    int width = file_manager.image.get_width<int>(), height = file_manager.image.get_height<int>();
+    if (image_rotation() % 180) std::swap(width, height);
+    const RECT bounds = wiv::auto_window_bounds(width, height, monitor.info.rcWork, current,
+        frame.right - frame.left, frame.bottom - frame.top, g_config.window_autowh_center.val);
+    SetWindowPos(g_hwnd, nullptr, bounds.left, bounds.top, bounds.right - bounds.left,
+        bounds.bottom - bounds.top, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS);
 }
 
 void User_interface::reset_image_panzoom() noexcept
@@ -190,7 +173,7 @@ void User_interface::slideshow()
 void User_interface::navigate(int direction, bool automatic)
 {
     const bool changed = direction < 0 ? file_manager.file_previous() : file_manager.file_next();
-    if (changed) PostMessageW(g_hwnd, WIV_WM_OPEN_FILE, automatic ? 1 : 0, 0);
+    if (changed) PostMessageW(g_hwnd, WIV_WM_OPEN_FILE, static_cast<WPARAM>(automatic ? wiv::Open_reason::Slideshow : wiv::Open_reason::Navigation), 0);
 }
 
 void User_interface::on_mouse_activity()
@@ -351,13 +334,13 @@ void User_interface::input()
                 return;
             }
             if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) {
-                image_rotation -= 90;
+                rotate_image(-90);
                 is_rotating = true;
                 *prenderer_should_update = true;
                 return;
             }
             if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) {
-                image_rotation += 90;
+                rotate_image(90);
                 is_rotating = true;
                 *prenderer_should_update = true;
                 return;
@@ -408,7 +391,7 @@ void User_interface::input()
 
     // Leave escape key with higher priority.
     if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
-        if (is_fullscreen)
+        if (is_fullscreen())
             toggle_fullscreen();
         else
             ensure(DestroyWindow(g_hwnd), != 0);
@@ -503,13 +486,13 @@ void User_interface::context_menu()
         }
         ImGui::Separator();
         if (ImGui::Selectable("Rotate CW")) {
-            image_rotation += 90;
+            rotate_image(90);
             is_rotating = true;
             *prenderer_should_update = true;
             goto end;
         }
         if (ImGui::Selectable("Rotate CCW")) {
-            image_rotation -= 90;
+            rotate_image(-90);
             is_rotating = true;
             *prenderer_should_update = true;
             goto end;
@@ -581,6 +564,8 @@ void User_interface::window_settings()
         ImGui::InputInt("Height##min", &g_config.window_min_height.val, 0, 0);
         ImGui::Spacing();
         ImGui::Checkbox("Start fullscreen", &g_config.start_fullscreen.val);
+        ImGui::Checkbox("Maximize when opening a file", &g_config.window_maximize_on_open.val);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Applies to startup, Open and drop. Browsing preserves window state. Fullscreen takes precedence.");
         ImGui::Checkbox("Keep aspect ratio when sizing", &g_config.window_keep_aspect.val);
         ImGui::Checkbox("Auto dimensions", &g_config.window_autowh.val);
         ImGui::BeginDisabled(!g_config.window_autowh.val);
@@ -599,6 +584,21 @@ void User_interface::window_settings()
         ImGui::Spacing();
 
         ImGui::ColorEdit4("Background color", g_config.clear_color.val.data(), ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_DisplayHSV);
+        ImGui::Spacing();
+    }
+    if (ImGui::CollapsingHeader("Image orientation")) {
+        ImGui::BeginDisabled(orientation_reload_pending_);
+        bool metadata = g_config.image_apply_metadata_orientation.val;
+        bool align = g_config.image_align_long_edge.val;
+        bool changed = ImGui::Checkbox("Apply EXIF/camera orientation", &metadata);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Controls EXIF and camera tags. Native JPEG XL and HEIF/AVIF transformations remain applied.");
+        ImGui::BeginDisabled(metadata);
+        changed |= ImGui::Checkbox("Align long edge with the monitor", &align);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Uses the monitor shape, even in a narrow window. Manual rotation overrides alignment until the next image or preference change.");
+        ImGui::EndDisabled();
+        if (changed) request_orientation_preferences(metadata, align);
+        ImGui::EndDisabled();
+        if (!orientation_error_.empty()) ImGui::TextWrapped("%s", orientation_error_.c_str());
         ImGui::Spacing();
     }
     if (ImGui::CollapsingHeader("Scale")) {
@@ -890,13 +890,22 @@ void User_interface::window_settings()
         ImGui::Spacing();
     }
     ImGui::SeparatorText("Changes");
+    ImGui::BeginDisabled(orientation_reload_pending_);
     if (ImGui::Button("Revert changes", button_size)) {
         scale_profile_index = 0;
+        const bool previous_metadata = g_config.image_apply_metadata_orientation.val;
+        const bool previous_align = g_config.image_align_long_edge.val;
         g_config.read();
+        const bool desired_metadata = g_config.image_apply_metadata_orientation.val;
+        const bool desired_align = g_config.image_align_long_edge.val;
+        g_config.image_apply_metadata_orientation.val = previous_metadata;
+        g_config.image_align_long_edge.val = previous_align;
+        request_orientation_preferences(desired_metadata, desired_align);
     }
     if (ImGui::Button("Write changes", button_size)) {
         g_config.write();
     }
+    ImGui::EndDisabled();
     ImGui::Spacing();
     ImGui::End();
 }
@@ -944,7 +953,7 @@ void User_interface::window_about()
     ImGui::Spacing();
     ImGui::Spacing();
     if (ImGui::Button("Web page...")) {
-        if (is_fullscreen)
+        if (is_fullscreen())
             toggle_fullscreen();
         ShellExecuteW(nullptr, L"open", L"https://github.com/garamond13/w-image-viewer", nullptr, nullptr, SW_SHOWNORMAL);
     }
@@ -971,7 +980,7 @@ void User_interface::dialog_file_open(WIV_OPEN_ file_type)
                 if (SUCCEEDED(shell_item->GetDisplayName(SIGDN_FILESYSPATH, &path))) {
                     if (file_type == WIV_OPEN_IMAGE) {
                         if (file_manager.file_open(path)) {
-                            ensure(PostMessageW(g_hwnd, WIV_WM_OPEN_FILE, 0, 0), != 0);
+                            ensure(PostMessageW(g_hwnd, WIV_WM_OPEN_FILE, static_cast<WPARAM>(wiv::Open_reason::ExplicitOpen), 0), != 0);
                         }
 
                     }
@@ -993,18 +1002,80 @@ void User_interface::dialog_file_open(WIV_OPEN_ file_type)
 
 void User_interface::toggle_fullscreen()
 {
-    static WINDOWPLACEMENT windowplacment;
-    if (is_fullscreen) {
-        SetWindowLongPtrW(g_hwnd, GWL_STYLE, WIV_WINDOW_STYLE);
-        ensure(SetWindowPlacement(g_hwnd, &windowplacment), != 0);
-        ensure(SetWindowPos(g_hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOZORDER | SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOCOPYBITS), != 0);
+    const bool changed = is_fullscreen() ? fullscreen_.leave(g_hwnd) : fullscreen_.enter(g_hwnd);
+    if (changed) {
+        on_mouse_activity();
+        update_image_orientation();
+        if (prenderer_should_update) *prenderer_should_update = true;
     }
-    else {
-        ensure(GetWindowPlacement(g_hwnd, &windowplacment), != 0);
-        SetWindowLongPtrW(g_hwnd, GWL_STYLE, WS_POPUP);
-        const int cx = GetSystemMetrics(SM_CXVIRTUALSCREEN);
-        const int cy = GetSystemMetrics(SM_CYVIRTUALSCREEN);
-        ensure(SetWindowPos(g_hwnd, HWND_TOP, 0, 0, cx, cy, SWP_NOZORDER | SWP_FRAMECHANGED | SWP_SHOWWINDOW | SWP_NOCOPYBITS), != 0);
+}
+
+void User_interface::refresh_monitor(bool follow_window)
+{
+    if (fullscreen_.transitioning()) return;
+    fullscreen_.refresh(g_hwnd, follow_window);
+    update_image_orientation();
+}
+
+void User_interface::rotate_image(int delta)
+{
+    rotation_.rotate(delta);
+    is_rotating = true;
+    if (prenderer_should_update) *prenderer_should_update = true;
+}
+
+void User_interface::update_image_orientation(bool reset)
+{
+    if (!file_manager.image.is_valid()) return;
+    const auto monitor = wiv::window_monitor(g_hwnd);
+    int angle = 0;
+    if (!g_config.image_apply_metadata_orientation.val && g_config.image_align_long_edge.val && monitor.valid()) {
+        angle = wiv::long_edge_rotation(file_manager.image.get_width<int>(), file_manager.image.get_height<int>(),
+            monitor.info.rcMonitor.right - monitor.info.rcMonitor.left,
+            monitor.info.rcMonitor.bottom - monitor.info.rcMonitor.top);
     }
-    is_fullscreen = !is_fullscreen;
+    const int previous_angle = rotation_.angle;
+    if (reset) rotation_.reset(angle);
+    else rotation_.update(angle);
+    if (previous_angle != rotation_.angle) {
+        image_pan = ImVec2();
+        is_rotating = true;
+        if (prenderer_should_update) *prenderer_should_update = true;
+    }
+}
+
+void User_interface::request_orientation_preferences(bool metadata, bool align)
+{
+    if (orientation_reload_pending_) return;
+    orientation_error_.clear();
+    if (metadata != g_config.image_apply_metadata_orientation.val && file_manager.image.is_valid()) {
+        if (!file_manager.file_open(file_manager.file_current.c_str(), {metadata, g_config.raw_thumb.val})) {
+            orientation_error_ = "Could not reload the current image: " + file_manager.last_error;
+            return;
+        }
+        pending_metadata_ = metadata;
+        pending_align_ = align;
+        orientation_reload_pending_ = true;
+        if (!PostMessageW(g_hwnd, WIV_WM_OPEN_FILE, static_cast<WPARAM>(wiv::Open_reason::SettingsReload), 0)) {
+            file_manager.cancel_open();
+            finish_settings_reload(false, "Could not schedule the image update.");
+        }
+        return;
+    }
+    const bool changed = metadata != g_config.image_apply_metadata_orientation.val
+        || align != g_config.image_align_long_edge.val;
+    g_config.image_apply_metadata_orientation.val = metadata;
+    g_config.image_align_long_edge.val = align;
+    if (changed) update_image_orientation(true);
+}
+
+void User_interface::finish_settings_reload(bool success, const std::string& error)
+{
+    if (!orientation_reload_pending_) return;
+    if (success) {
+        g_config.image_apply_metadata_orientation.val = pending_metadata_;
+        g_config.image_align_long_edge.val = pending_align_;
+        orientation_error_.clear();
+    } else orientation_error_ = "Could not update image orientation: " + error;
+    orientation_reload_pending_ = false;
 }
