@@ -28,8 +28,10 @@ void File_manager::commit_open()
     has_previous_ = has_next_ = has_alternative_ = false;
     const auto files = collect_files();
     for (const auto& file : files) {
-        std::error_code error;
-        if (std::filesystem::equivalent(file, file_current, error)) { file_current = file; break; }
+        if (CompareStringOrdinal(file.c_str(), -1, file_current.c_str(), -1, TRUE) == CSTR_EQUAL) {
+            file_current = file;
+            break;
+        }
     }
     for (const auto& file : files) {
         has_previous_ |= file < file_current;
