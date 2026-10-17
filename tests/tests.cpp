@@ -15,6 +15,7 @@
 namespace fs = std::filesystem;
 int window_presentation_tests();
 int beta2_policy_tests(const fs::path& fixtures, const fs::path& scratch);
+int application_startup_tests(const fs::path& executable, const fs::path& fixtures, const fs::path& scratch);
 static int assertions = 0;
 #define CHECK(expression) do { ++assertions; if (!(expression)) throw std::runtime_error(std::string("Failed: ") + #expression + " at line " + std::to_string(__LINE__)); } while (0)
 
@@ -343,13 +344,14 @@ int wmain(int argc, wchar_t* argv[])
 {
     std::cout << std::unitbuf;
     try {
-        CHECK(argc == 3);
+        CHECK(argc == 3 || argc == 4);
         const fs::path fixtures = fs::absolute(argv[1]), scratch = fs::absolute(argv[2]);
         fs::create_directories(scratch);
         orientation_tests(); visibility_tests(); fixture_tests(fixtures);
         jxl_tests(scratch); embedded_profile_tests(scratch); navigation_tests(fixtures, scratch);
         assertions += beta2_policy_tests(fixtures, scratch);
         assertions += window_presentation_tests();
+        if (argc == 4) assertions += application_startup_tests(fs::absolute(argv[3]), fixtures, scratch);
         std::cout << "PASS: " << assertions << " assertions\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

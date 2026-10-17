@@ -70,3 +70,19 @@ mixed-format directory traversal with corrupt neighbors and Unicode paths.
 Fixtures and pixel references are committed. `tests/generate_fixtures.py`
 regenerates the independent references with Pillow 12.3.0; Pillow is not a
 runtime dependency of the viewer or test executable.
+
+Beta.2 also tests configuration persistence, disabled EXIF/camera transforms,
+original synthetic DNG full-image/JPEG-preview fixtures, monitor-based alignment,
+and real Win32 fullscreen/placement round trips. `tests/generate_raw_fixtures.py`
+regenerates the DNG files with the Python standard library.
+
+On a local Windows desktop with a DirectX 11 adapter, pass the application as
+the third argument to also verify actual startup maximization, disabled
+maximization, fullscreen precedence, failed opens, and minimized launches:
+
+```powershell
+.\build\wiv-tests.exe .\tests\fixtures .\build\test-data .\build\w-image-viewer.exe
+```
+
+These startup tests create isolated executable/configuration copies under the
+test-data directory. They do not use the installed viewer's configuration.

@@ -83,6 +83,7 @@ int beta2_policy_tests(const std::filesystem::path& fixtures, const std::filesys
         Image reference;
         const std::string prefix = thumbnail ? "raw-preview-" : "raw-full-";
         check(reference.open(fixtures / (prefix + "1.dng"), {false, thumbnail}), "Cannot read generated DNG reference");
+        std::cout << "RAW reference " << prefix << reference.get_width<int>() << 'x' << reference.get_height<int>() << '\n';
         check(reference.get_width<int>() == (thumbnail ? 64 : 128), "Expected RAW thumbnail/full decode path was not selected");
         for (int orientation : {1, 3, 6, 8}) {
             const auto path = fixtures / (prefix + std::to_string(orientation) + ".dng");

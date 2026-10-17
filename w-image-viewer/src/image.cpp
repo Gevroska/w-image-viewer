@@ -63,13 +63,18 @@ bool Image::decode(const std::filesystem::path& path, Decode_options options)
             && raw.imgdata.thumbnail.tformat == LIBRAW_THUMBNAIL_JPEG) {
             // Both the RAW owner and its memory reader outlive the complete decode.
             OIIO::Filesystem::IOMemReader reader(raw.imgdata.thumbnail.thumb, raw.imgdata.thumbnail.tlength);
-            auto input = OIIO::ImageInput::open("thumbnail.jpg", &config, &reader);
+            OIIO::ImageSpec thumbnail_config = config;
+            OIIO::Filesystem::IOProxy* proxy = &reader;
+            // JPEG's configuration overload retrieves the proxy again during open.
+            thumbnail_config.attribute("oiio:ioproxy", OIIO::TypeDesc::PTR, &proxy);
+            auto input = OIIO::ImageInput::open("thumbnail.jpg", &thumbnail_config, &reader);
             const int flip = raw.imgdata.sizes.flip;
             const int orientation = flip == 3 ? 3 : flip == 5 ? 8 : flip == 6 ? 6 : 1;
             const bool known_flip = flip == 0 || flip == 3 || flip == 5 || flip == 6;
             if (input && (!options.apply_metadata_orientation || known_flip || input->spec().find_attribute("Orientation"))
                 && read_input(*input, options, orientation)) return true;
             // Unsupported bitmap thumbnails and broken JPEG thumbnails use full RAW decoding.
+            OIIO::geterror();
             pixels_.clear();
             profile.reset();
             trc = {WIV_CMS_TRC_NONE, 0.0f};
