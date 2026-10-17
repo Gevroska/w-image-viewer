@@ -88,7 +88,9 @@ public:
         Monitor_coordinates coordinates;
         transitioning_ = true;
         active_ = false;
-        const bool restored = set_style(window, GWL_STYLE, style_)
+        // Let SetWindowPlacement perform the normal-to-maximized transition.
+        // Restoring WS_MAXIMIZE first would retain the borderless fullscreen bounds.
+        const bool restored = set_style(window, GWL_STYLE, style_ & ~LONG_PTR(WS_MAXIMIZE | WS_MINIMIZE))
             && set_style(window, GWL_EXSTYLE, ex_style_)
             && SetWindowPlacement(window, &placement_)
             && SetWindowPos(window, nullptr, 0, 0, 0, 0,

@@ -73,6 +73,9 @@ int window_presentation_tests()
                         wiv::Monitor_coordinates physical;
                         RECT actual{};
                         check(GetWindowRect(window, &actual) != FALSE, "Could not get restored bounds");
+                        if (!EqualRect(&actual, &normal)) std::cerr << "Placement drift (maximized=" << maximized << "): expected "
+                            << normal.left << ',' << normal.top << ',' << normal.right << ',' << normal.bottom
+                            << " actual " << actual.left << ',' << actual.top << ',' << actual.right << ',' << actual.bottom << '\n';
                         check(EqualRect(&actual, &normal) != FALSE, "Restored window placement drifted");
                         check(GetWindowLongPtrW(window, GWL_STYLE) == style, "Window styles changed across fullscreen");
                     }
