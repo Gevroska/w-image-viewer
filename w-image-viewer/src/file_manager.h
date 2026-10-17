@@ -21,7 +21,7 @@ public:
     std::string last_error;
 private:
     bool navigate(int direction);
-    std::vector<std::filesystem::path> collect_files() const;
+    std::vector<std::filesystem::path> collect_files(const std::filesystem::path& current) const;
     std::unique_ptr<Image> pending_;
     std::filesystem::path pending_path_;
     bool has_previous_ = false, has_next_ = false, has_alternative_ = false;

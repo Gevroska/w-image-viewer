@@ -15,6 +15,7 @@
 namespace fs = std::filesystem;
 int window_presentation_tests();
 int beta2_policy_tests(const fs::path& fixtures, const fs::path& scratch);
+int renderer_regression_tests(const fs::path& fixtures, const fs::path& scratch);
 int application_startup_tests(const fs::path& executable, const fs::path& fixtures, const fs::path& scratch);
 static int assertions = 0;
 #define CHECK(expression) do { ++assertions; if (!(expression)) throw std::runtime_error(std::string("Failed: ") + #expression + " at line " + std::to_string(__LINE__)); } while (0)
@@ -340,6 +341,36 @@ void embedded_profile_tests(const fs::path& scratch)
     std::cout << "PASS: AVIF NCLX Display P3 metadata creates a wide-gamut display profile\n";
 }
 
+void case_sensitive_navigation_tests(const fs::path& fixtures, const fs::path& scratch)
+{
+#ifdef FILE_CS_FLAG_CASE_SENSITIVE_DIR
+    const auto directory = scratch / "case-sensitive-navigation";
+    fs::create_directories(directory);
+    const HANDLE handle = CreateFileW(directory.c_str(), FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+    FILE_CASE_SENSITIVE_INFO info{FILE_CS_FLAG_CASE_SENSITIVE_DIR};
+    const bool enabled = handle != INVALID_HANDLE_VALUE
+        && SetFileInformationByHandle(handle, FileCaseSensitiveInfo, &info, sizeof(info));
+    if (handle != INVALID_HANDLE_VALUE) CloseHandle(handle);
+    if (!enabled) {
+        std::cout << "SKIP: this filesystem does not allow a case-sensitive test directory\n";
+        return;
+    }
+    fs::copy_file(fixtures / "orientation-1.png", directory / "A.png", fs::copy_options::overwrite_existing);
+    fs::copy_file(fixtures / "orientation-6.png", directory / "a.png", fs::copy_options::overwrite_existing);
+    File_manager manager;
+    CHECK(manager.file_open((directory / "a.png").c_str())); manager.commit_open();
+    CHECK(manager.file_current.filename() == "a.png" && manager.image.get_width<int>() == 40);
+    CHECK(manager.file_previous()); manager.commit_open();
+    CHECK(manager.file_current.filename() == "A.png" && manager.image.get_width<int>() == 64);
+    CHECK(manager.file_next()); manager.commit_open();
+    CHECK(manager.file_current.filename() == "a.png" && manager.image.get_width<int>() == 40);
+    std::cout << "PASS: case-sensitive sibling names retain the displayed file identity\n";
+#else
+    std::cout << "SKIP: Windows SDK has no directory case-sensitivity API\n";
+#endif
+}
+
 int wmain(int argc, wchar_t* argv[])
 {
     std::cout << std::unitbuf;
@@ -349,7 +380,9 @@ int wmain(int argc, wchar_t* argv[])
         fs::create_directories(scratch);
         orientation_tests(); visibility_tests(); fixture_tests(fixtures);
         jxl_tests(scratch); embedded_profile_tests(scratch); navigation_tests(fixtures, scratch);
+        case_sensitive_navigation_tests(fixtures, scratch);
         assertions += beta2_policy_tests(fixtures, scratch);
+        assertions += renderer_regression_tests(fixtures, scratch);
         assertions += window_presentation_tests();
         if (argc == 4) assertions += application_startup_tests(fs::absolute(argv[3]), fixtures, scratch);
         std::cout << "PASS: " << assertions << " assertions\n";

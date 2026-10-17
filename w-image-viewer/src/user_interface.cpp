@@ -173,7 +173,7 @@ void User_interface::slideshow()
 void User_interface::navigate(int direction, bool automatic)
 {
     const bool changed = direction < 0 ? file_manager.file_previous() : file_manager.file_next();
-    if (changed) PostMessageW(g_hwnd, WIV_WM_OPEN_FILE, static_cast<WPARAM>(automatic ? wiv::Open_reason::Slideshow : wiv::Open_reason::Navigation), 0);
+    if (changed) SendMessageW(g_hwnd, WIV_WM_OPEN_FILE, static_cast<WPARAM>(automatic ? wiv::Open_reason::Slideshow : wiv::Open_reason::Navigation), 0);
 }
 
 void User_interface::on_mouse_activity()
@@ -980,7 +980,7 @@ void User_interface::dialog_file_open(WIV_OPEN_ file_type)
                 if (SUCCEEDED(shell_item->GetDisplayName(SIGDN_FILESYSPATH, &path))) {
                     if (file_type == WIV_OPEN_IMAGE) {
                         if (file_manager.file_open(path)) {
-                            ensure(PostMessageW(g_hwnd, WIV_WM_OPEN_FILE, static_cast<WPARAM>(wiv::Open_reason::ExplicitOpen), 0), != 0);
+                            SendMessageW(g_hwnd, WIV_WM_OPEN_FILE, static_cast<WPARAM>(wiv::Open_reason::ExplicitOpen), 0);
                         }
 
                     }
@@ -1056,10 +1056,8 @@ void User_interface::request_orientation_preferences(bool metadata, bool align)
         pending_metadata_ = metadata;
         pending_align_ = align;
         orientation_reload_pending_ = true;
-        if (!PostMessageW(g_hwnd, WIV_WM_OPEN_FILE, static_cast<WPARAM>(wiv::Open_reason::SettingsReload), 0)) {
-            file_manager.cancel_open();
-            finish_settings_reload(false, "Could not schedule the image update.");
-        }
+        // Complete this candidate on the UI thread before another open can replace it.
+        SendMessageW(g_hwnd, WIV_WM_OPEN_FILE, static_cast<WPARAM>(wiv::Open_reason::SettingsReload), 0);
         return;
     }
     const bool changed = metadata != g_config.image_apply_metadata_orientation.val

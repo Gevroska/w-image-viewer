@@ -86,3 +86,10 @@ maximization, fullscreen precedence, failed opens, and minimized launches:
 
 These startup tests create isolated executable/configuration copies under the
 test-data directory. They do not use the installed viewer's configuration.
+
+The renderer regression tests use the Windows WARP software graphics device.
+They exercise the production image/color uploads with failures injected at each
+texture and view creation stage, and read back the production transparency
+shader after rotation. The `WIV_TESTS` failure hook exists only in the test build.
+Build the application before building the tests so its generated shader headers
+are available.

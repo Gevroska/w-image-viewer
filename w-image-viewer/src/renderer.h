@@ -28,13 +28,18 @@ public:
     bool should_update = false;
     User_interface ui;
 private:
+#ifdef WIV_TESTS
+    friend struct Renderer_test_access;
+    int upload_failure_stage_ = 0;
+#endif
+    HRESULT image_upload_result(HRESULT result, int stage) const noexcept;
     bool cursor_hidden_ = false;
     const uint8_t* get_image_data(const Image& source, DXGI_FORMAT& format, UINT& sys_mem_pitch);
     void update_scale_and_dims_output() noexcept;
     void update_scale_profile() noexcept;
     void init_cms_profile_display();
-    void create_cms_lut();
-    std::unique_ptr<uint16_t[]> cms_transform_lut();
+    bool create_cms_lut(const Image& source, Com_ptr<ID3D11ShaderResourceView>& view);
+    std::unique_ptr<uint16_t[]> cms_transform_lut(const Image& source);
     void pass_cms();
     void pass_linearize(UINT width, UINT height);
     void pass_delinearize(UINT width, UINT height);

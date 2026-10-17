@@ -14,9 +14,10 @@ cbuffer cb0 : register(b0)
 
 float4 main(float4 pos : SV_Position, float2 texcoord : TEXCOORD) : SV_Target
 {
+    const float3 background = fmod(floor(texcoord.x * size.x) + floor(texcoord.y * size.y), 2.0) ? tile2 : tile1;
     if (rotate) {
         rotate_texcoord(texcoord, theta);
     }
     const float4 color = saturate(tex.SampleLevel(smp, texcoord, 0.0));
-    return float4(color.rgb + (fmod(floor(texcoord.x * size.x) + floor(texcoord.y * size.y), 2.0) ? tile2 : tile1) * (1.0 - color.a), 1.0);
+    return float4(color.rgb + background * (1.0 - color.a), 1.0);
 }

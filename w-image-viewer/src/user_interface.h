@@ -47,6 +47,9 @@ public:
     bool image_no_scale = false;
     
 private:
+#ifdef WIV_TESTS
+    friend struct User_interface_test_access;
+#endif
     void navigation_controls();
     void input();
     void overlay() const;

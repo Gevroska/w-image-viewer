@@ -129,48 +129,66 @@ bool Renderer::create_image()
 {
 	const Image* candidate = ui.file_manager.pending_image();
 	if (!candidate) return false;
-	// Get data from the image.
-	DXGI_FORMAT format;
-	UINT sys_mem_pitch;
-	const uint8_t* data = get_image_data(*candidate, format, sys_mem_pitch);
-	
+	try {
+		// Get data from the image.
+		DXGI_FORMAT format;
+		UINT sys_mem_pitch;
+		const uint8_t* data = get_image_data(*candidate, format, sys_mem_pitch);
 
-	// Create texture.
-	D3D11_TEXTURE2D_DESC texture2d_desc = {};
-	texture2d_desc.Width = candidate->get_width<UINT>();
-	texture2d_desc.Height = candidate->get_height<UINT>();
-	texture2d_desc.MipLevels = 1;
-	texture2d_desc.ArraySize = 1;
-	texture2d_desc.Format = format;
-	texture2d_desc.SampleDesc.Count = 1;
-	texture2d_desc.Usage = D3D11_USAGE_IMMUTABLE;
-	texture2d_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-	D3D11_SUBRESOURCE_DATA subresource_data = {};
-	subresource_data.pSysMem = data;
-	subresource_data.SysMemPitch = sys_mem_pitch;
-	Com_ptr<ID3D11Texture2D> texture2d;
-	Com_ptr<ID3D11ShaderResourceView> view;
-	if (FAILED(device->CreateTexture2D(&texture2d_desc, &subresource_data, texture2d.put()))
-	    || FAILED(device->CreateShaderResourceView(texture2d.get(), nullptr, view.put()))) {
+		// Create texture.
+		D3D11_TEXTURE2D_DESC texture2d_desc = {};
+		texture2d_desc.Width = candidate->get_width<UINT>();
+		texture2d_desc.Height = candidate->get_height<UINT>();
+		texture2d_desc.MipLevels = 1;
+		texture2d_desc.ArraySize = 1;
+		texture2d_desc.Format = format;
+		texture2d_desc.SampleDesc.Count = 1;
+		texture2d_desc.Usage = D3D11_USAGE_IMMUTABLE;
+		texture2d_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+		D3D11_SUBRESOURCE_DATA subresource_data = {};
+		subresource_data.pSysMem = data;
+		subresource_data.SysMemPitch = sys_mem_pitch;
+		Com_ptr<ID3D11Texture2D> texture2d;
+		Com_ptr<ID3D11ShaderResourceView> view;
+		if (FAILED(image_upload_result(device->CreateTexture2D(&texture2d_desc, &subresource_data, texture2d.put()), 1))
+		    || FAILED(image_upload_result(device->CreateShaderResourceView(texture2d.get(), nullptr, view.put()), 2))) {
+			ui.file_manager.cancel_open();
+			return false;
+		}
+		Com_ptr<ID3D11ShaderResourceView> color_view;
+		if (cms_profile_display && !create_cms_lut(*candidate, color_view)) {
+			ui.file_manager.cancel_open();
+			return false;
+		}
+		// Publish image and color resources together, after every upload has succeeded.
+		ui.file_manager.commit_open();
+		srv_image = std::move(view);
+		ctx->PSSetShaderResources(2, 1, &color_view);
+		is_cms_valid = bool(color_view);
+		Info::image_width = image.get_width<int>();
+		Info::image_height = image.get_height<int>();
+		Info::image_bitdepth = image.bitdepth;
+		Info::image_nchannels = image.channels;
+
+		// Resampling happens before the color transform, in the source color space.
+		trc = image.trc;
+		return true;
+	} catch (const std::exception& exception) {
+		ui.file_manager.last_error = exception.what();
 		ui.file_manager.cancel_open();
 		return false;
 	}
-	srv_image = std::move(view);
-	ui.file_manager.commit_open();
-    Info::image_width = image.get_width<int>();
-    Info::image_height = image.get_height<int>();
-	Info::image_bitdepth = image.bitdepth;
-	Info::image_nchannels = image.channels;
+}
 
-	if (cms_profile_display) {
-		create_cms_lut();
-	}
-
-	// We will still need a tone response curve, so use the one from the image.
-	else {
-		trc = image.trc;
-	}
-	return true;
+HRESULT Renderer::image_upload_result(HRESULT result, int stage) const noexcept
+{
+#ifdef WIV_TESTS
+	// Exercise real allocations, then inject failure into the production rollback branch.
+	if (upload_failure_stage_ == stage) return E_OUTOFMEMORY;
+#else
+	(void)stage;
+#endif
+	return result;
 }
 
 void Renderer::on_window_resize() noexcept
@@ -329,13 +347,10 @@ void Renderer::init_cms_profile_display()
 	}
 }
 
-void Renderer::create_cms_lut()
+bool Renderer::create_cms_lut(const Image& source, Com_ptr<ID3D11ShaderResourceView>& view)
 {
-	const auto lut = cms_transform_lut();
-	if (!lut) {
-		is_cms_valid = false;
-		return;
-	}
+	const auto lut = cms_transform_lut(source);
+	if (!lut) return true;
 
 	// Bind lut as 3d texture.
 	D3D11_TEXTURE3D_DESC texture3d_desc = {};
@@ -351,18 +366,14 @@ void Renderer::create_cms_lut()
 	subresource_data.SysMemPitch = g_config.cms_lut_size.val * 4 * 2; // width * nchannals * byte_depth
 	subresource_data.SysMemSlicePitch = sq(g_config.cms_lut_size.val) * 4 * 2; // width * height * nchannals * byte_depth
 	Com_ptr<ID3D11Texture3D> texture3d;
-	ensure(device->CreateTexture3D(&texture3d_desc, &subresource_data, texture3d.put()), >= 0);
-	Com_ptr<ID3D11ShaderResourceView> srv;
-	ensure(device->CreateShaderResourceView(texture3d.get(), nullptr, srv.put()), >= 0);
-	ctx->PSSetShaderResources(2, 1, &srv);
-	
-	is_cms_valid = true;
+	return SUCCEEDED(image_upload_result(device->CreateTexture3D(&texture3d_desc, &subresource_data, texture3d.put()), 3))
+		&& SUCCEEDED(image_upload_result(device->CreateShaderResourceView(texture3d.get(), nullptr, view.put()), 4));
 }
 
-std::unique_ptr<uint16_t[]> Renderer::cms_transform_lut()
+std::unique_ptr<uint16_t[]> Renderer::cms_transform_lut(const Image& source)
 {
 	std::unique_ptr<uint16_t[]> lut;
-	if (image.profile) {
+	if (source.profile) {
 		
 		// Set flags.
 		cmsUInt32Number flags = cmsFLAGS_HIGHRESPRECALC | cmsFLAGS_NOOPTIMIZE;
@@ -370,7 +381,8 @@ std::unique_ptr<uint16_t[]> Renderer::cms_transform_lut()
 			flags |= cmsFLAGS_BLACKPOINTCOMPENSATION;
 		}
 		
-		auto htransform = cmsCreateTransform(image.profile.get(), TYPE_RGB_16, cms_profile_display.get(), TYPE_RGBA_16, g_config.cms_intent.val, flags);
+		std::unique_ptr<std::remove_pointer_t<cmsHTRANSFORM>, decltype(&cmsDeleteTransform)> htransform(
+			cmsCreateTransform(source.profile.get(), TYPE_RGB_16, cms_profile_display.get(), TYPE_RGBA_16, g_config.cms_intent.val, flags), cmsDeleteTransform);
 		if (htransform) {
 			lut = std::make_unique_for_overwrite<uint16_t[]>(cube(g_config.cms_lut_size.val) * 4);
 
@@ -387,8 +399,7 @@ std::unique_ptr<uint16_t[]> Renderer::cms_transform_lut()
 					wiv_cms_lut = WIV_CMS_LUT_65.data();
 			}
 
-			cmsDoTransform(htransform, wiv_cms_lut, lut.get(), cube(g_config.cms_lut_size.val));
-			cmsDeleteTransform(htransform);
+			cmsDoTransform(htransform.get(), wiv_cms_lut, lut.get(), cube(g_config.cms_lut_size.val));
 		}
 	}
 	return lut;

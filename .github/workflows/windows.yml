@@ -192,6 +192,10 @@ jobs:
 
           Beta.2 adds **Maximize when opening a file**, fixes fullscreen to occupy exactly one monitor and restore normal/maximized placement, and adds **Apply EXIF/camera orientation** plus optional **Align long edge with the monitor**. Browsing preserves window state, and existing Fit upscaling is unchanged. Settings reload the current image safely; use **Write changes** to persist preferences.
 
+          Beta.3 fixes six issues found while reviewing both earlier betas: partial image/settings commits after graphics allocation failure, incorrect identity for case-sensitive sibling filenames, a fixed-size deletion buffer overflow with long paths, overlapping image-open completion, use of the display transfer curve during source-image resampling, and stretched transparency tiles after rotation. Regression coverage includes software-rendered graphics upload failures and pixel readback of the production transparency shader.
+
+          Fullscreen geometry and normal/maximized restoration are tested on the available display. Physical dual-monitor and mixed-DPI validation remains outstanding. Long-path deletion no longer overflows a fixed buffer; this does not extend the Windows Shell's recycling capabilities.
+
           Requires Windows x64 with DirectX 11 support and the [Microsoft Visual C++ x64 Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe) (including the OpenMP runtime).
 
           SHA-256 checksums are included in SHA256SUMS.txt.

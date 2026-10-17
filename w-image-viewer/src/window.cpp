@@ -178,7 +178,7 @@ LRESULT Window::handle_message(HWND hwnd, UINT message, WPARAM wparam, LPARAM lp
         case WM_DROPFILES:
             ensure(SetForegroundWindow(hwnd), != 0);
             if (renderer.ui.file_manager.drag_and_drop(reinterpret_cast<HDROP>(wparam)))
-                PostMessageW(hwnd, WIV_WM_OPEN_FILE, static_cast<WPARAM>(wiv::Open_reason::ExplicitOpen), 0);
+                finish_image_open(wiv::Open_reason::ExplicitOpen);
             return 0;
         case WIV_WM_RESET_RESOURCES:
             renderer.reset_resources();

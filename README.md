@@ -30,7 +30,7 @@ Builds of the latest source are also available as downloadable artifacts in
 
 ## 2.2.0 beta
 
-[2.2.0-beta.2](https://github.com/Gevroska/w-image-viewer/releases/tag/v2.2.0-beta.2)
+[2.2.0-beta.3](https://github.com/Gevroska/w-image-viewer/releases/tag/v2.2.0-beta.3)
 adds all eight EXIF orientations, JPEG XL and AVIF decoding, and previous/next
 buttons at the sides of the viewer. Moving the mouse reveals the buttons;
 they fade after two seconds of inactivity and stay visible while hovered.
@@ -41,6 +41,11 @@ to use one monitor and restore window placement, and adds EXIF/camera orientatio
 control with optional long-edge alignment to the monitor. Manual rotation takes
 priority over automatic alignment for the current image. Existing Fit upscaling
 and original-size controls are preserved.
+
+Beta.3 fixes image/settings rollback after graphics allocation failures, file
+identity in case-sensitive folders, long-path deletion buffer handling, and
+overlapping image-open completion. It also corrects color-managed resampling
+and the transparency checkerboard after rotation.
 
 The beta is published as a prerelease; 2.1.1 remains the latest stable release.
 The renderer supports SDR still images. AVIF currently decodes to 8-bit RGB(A).

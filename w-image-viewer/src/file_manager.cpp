@@ -14,44 +14,58 @@ bool File_manager::file_open(const wchar_t* path)
 
 bool File_manager::file_open(const wchar_t* path, Decode_options options)
 {
-    std::error_code error;
-    auto absolute = std::filesystem::absolute(path, error).lexically_normal();
-    if (error) { last_error = error.message(); return false; }
-    auto candidate = std::make_unique<Image>();
-    if (!candidate->open(absolute, options)) { last_error = candidate->error; return false; }
-    last_error.clear();
-    pending_ = std::move(candidate);
-    pending_path_ = std::move(absolute);
-    return true;
+    try {
+        std::error_code error;
+        auto absolute = std::filesystem::absolute(path, error).lexically_normal();
+        if (error) { last_error = error.message(); return false; }
+        auto candidate = std::make_unique<Image>();
+        if (!candidate->open(absolute, options)) { last_error = candidate->error; return false; }
+        last_error.clear();
+        pending_ = std::move(candidate);
+        pending_path_ = std::move(absolute);
+        return true;
+    } catch (const std::exception& exception) {
+        last_error = exception.what();
+        return false;
+    }
 }
 
 void File_manager::commit_open()
 {
     if (!pending_) return;
-    image = std::move(*pending_);
-    pending_.reset();
-    file_current = std::move(pending_path_);
-    has_previous_ = has_next_ = has_alternative_ = false;
-    const auto files = collect_files();
-    for (const auto& file : files) {
-        if (CompareStringOrdinal(file.c_str(), -1, file_current.c_str(), -1, TRUE) == CSTR_EQUAL) {
-            file_current = file;
-            break;
+    auto current = pending_path_;
+    const auto files = collect_files(current);
+    // Prefer an exact entry in directories that opt into case-sensitive names.
+    if (std::find(files.begin(), files.end(), current) == files.end()) {
+        for (const auto& file : files) {
+            if (CompareStringOrdinal(file.c_str(), -1, current.c_str(), -1, TRUE) == CSTR_EQUAL) {
+                current = file;
+                break;
+            }
         }
     }
+    bool previous = false, next = false, alternative = false;
     for (const auto& file : files) {
-        has_previous_ |= file < file_current;
-        has_next_ |= file > file_current;
-        has_alternative_ |= file != file_current;
+        previous |= file < current;
+        next |= file > current;
+        alternative |= file != current;
     }
+    // Directory enumeration and path allocation must finish before publishing.
+    image = std::move(*pending_);
+    file_current = std::move(current);
+    pending_.reset();
+    pending_path_.clear();
+    has_previous_ = previous;
+    has_next_ = next;
+    has_alternative_ = alternative;
 }
 
-std::vector<std::filesystem::path> File_manager::collect_files() const
+std::vector<std::filesystem::path> File_manager::collect_files(const std::filesystem::path& current) const
 {
     std::vector<std::filesystem::path> files;
-    if (file_current.empty()) return files;
+    if (current.empty()) return files;
     std::error_code error;
-    std::filesystem::directory_iterator iterator(file_current.parent_path(), error), end;
+    std::filesystem::directory_iterator iterator(current.parent_path(), error), end;
     while (!error && iterator != end) {
         const auto& file = *iterator;
         if (file.is_regular_file(error)
@@ -70,7 +84,7 @@ bool File_manager::can_navigate(int direction) const
 
 bool File_manager::navigate(int direction)
 {
-    const auto files = collect_files();
+    const auto files = collect_files(file_current);
     if (files.empty()) return false;
     const auto forward = std::upper_bound(files.begin(), files.end(), file_current);
     const auto backward = std::lower_bound(files.begin(), files.end(), file_current);
@@ -106,14 +120,13 @@ void File_manager::delete_file()
         return;
 
     // SHFILEOPSTRUCTW::pFrom must be double null terminated.
-    wchar_t path[MAX_PATH + 1];
-    wcscpy(path, file_current.c_str());
-    path[std::char_traits<wchar_t>::length(path) + 1] = '\0';
+    std::wstring path = file_current.wstring();
+    path.push_back(L'\0');
 
     // Configured to send file to the recycle bin.
     SHFILEOPSTRUCTW fileopenstruct = {};
     fileopenstruct.wFunc = FO_DELETE;
-    fileopenstruct.pFrom = path;
+    fileopenstruct.pFrom = path.c_str();
     fileopenstruct.fFlags = FOF_ALLOWUNDO;
 
     if (SHFileOperationW(&fileopenstruct) == 0 && !fileopenstruct.fAnyOperationsAborted) {
@@ -121,9 +134,9 @@ void File_manager::delete_file()
         if (!opened) {
             image.close();
             file_current.clear();
-            ensure(PostMessageW(g_hwnd, WIV_WM_RESET_RESOURCES, 0, 0), != 0);
+            SendMessageW(g_hwnd, WIV_WM_RESET_RESOURCES, 0, 0);
         }
         else
-            ensure(PostMessageW(g_hwnd, WIV_WM_OPEN_FILE, static_cast<WPARAM>(wiv::Open_reason::Navigation), 0), != 0);
+            SendMessageW(g_hwnd, WIV_WM_OPEN_FILE, static_cast<WPARAM>(wiv::Open_reason::Navigation), 0);
     }
 }
