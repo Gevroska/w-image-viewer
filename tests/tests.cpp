@@ -274,6 +274,7 @@ void embedded_profile_tests(const fs::path& scratch)
         CHECK(heif_image_add_plane(source, heif_channel_interleaved, 8, 8, bits).code == heif_error_Ok);
         int stride = 0;
         auto* pixels = heif_image_get_plane(source, heif_channel_interleaved, &stride);
+        CHECK(pixels != nullptr && stride >= 8 * 3 * (bits == 8 ? 1 : 2));
         for (int y = 0; y < 8; ++y) {
             for (int x = 0; x < 8 * 3; ++x) {
                 if (bits == 8) pixels[y * stride + x] = 128;
@@ -282,12 +283,16 @@ void embedded_profile_tests(const fs::path& scratch)
         }
         CHECK(heif_image_set_raw_color_profile(source, "prof", icc.data(), icc.size()).code == heif_error_Ok);
         heif_image_handle* handle = nullptr;
+        std::cout << "Encoding AVIF test image\n";
         CHECK(heif_context_encode_image(context, source, encoder, nullptr, &handle).code == heif_error_Ok);
+        std::cout << "Inspecting encoded AVIF test image\n";
+        CHECK(handle != nullptr);
         CHECK(heif_image_handle_get_luma_bits_per_pixel(handle) == bits);
         const auto avif = scratch / ("custom-profile-" + std::to_string(bits) + ".avif");
         CHECK(heif_context_write_to_file(context, avif.string().c_str()).code == heif_error_Ok);
         heif_image_handle_release(handle); heif_image_release(source);
         heif_encoder_release(encoder); heif_context_free(context);
+        std::cout << "Decoding AVIF test image\n";
         CHECK(image.open(avif));
         CHECK(image.profile && std::abs(cmsDetectRGBProfileGamma(image.profile.get(), 0.01) - 1.8) < 0.01);
         CHECK(image.get_basetype() == OIIO::TypeDesc::UINT8 && std::abs(int(image.pixels()[0]) - 128) <= 3);

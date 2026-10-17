@@ -152,6 +152,7 @@ jobs:
           name: validation-${{ steps.version.outputs.version }}
           path: |
             build/wiv-tests.exe
+            build/wiv-tests.map
             build/w-image-viewer.exe
             build/test-results.txt
             tests/fixtures/**
