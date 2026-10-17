@@ -64,6 +64,7 @@ void visibility_tests()
 
 void compare_fixture(const fs::path& path, int width, int height, int tolerance)
 {
+    const auto source_bytes = read_file(path);
     Image image;
     CHECK(image.open(path));
     CHECK(image.get_width<int>() == width && image.get_height<int>() == height);
@@ -76,6 +77,7 @@ void compare_fixture(const fs::path& path, int width, int height, int tolerance)
     if (worst > tolerance) std::cerr << path.filename().string() << " worst pixel error " << worst << '\n';
     CHECK(worst <= tolerance);
     CHECK(image.profile != nullptr);
+    CHECK(read_file(path) == source_bytes);
 }
 
 void fixture_tests(const fs::path& fixtures)
@@ -296,7 +298,12 @@ void embedded_profile_tests(const fs::path& scratch)
     CHECK(heif_nclx_color_profile_set_matrix_coefficients(nclx, 1).code == heif_error_Ok);
     CHECK(heif_image_set_nclx_color_profile(source, nclx).code == heif_error_Ok);
     heif_image_handle* handle = nullptr;
-    CHECK(heif_context_encode_image(context, source, encoder, nullptr, &handle).code == heif_error_Ok);
+    auto* options = heif_encoding_options_alloc();
+    CHECK(options != nullptr);
+    options->output_nclx_profile = nclx;
+    CHECK(heif_context_encode_image(context, source, encoder, options, &handle).code == heif_error_Ok);
+    options->output_nclx_profile = nullptr;
+    heif_encoding_options_free(options);
     const auto avif = scratch / "nclx-p3.avif";
     CHECK(heif_context_write_to_file(context, avif.string().c_str()).code == heif_error_Ok);
     heif_image_handle_release(handle); heif_nclx_color_profile_free(nclx);
