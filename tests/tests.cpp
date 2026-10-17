@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "image.h"
 #include "file_manager.h"
+#include "include/global.h"
 #include "include/orientation.h"
 #include "include/navigation_visibility.h"
 #include <jxl/encode.h>
