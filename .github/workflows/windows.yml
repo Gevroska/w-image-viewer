@@ -68,8 +68,9 @@ jobs:
           vs-version: '[17.0,18.0)'
           msbuild-architecture: x64
 
-      - name: Cache compiled dependencies
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Restore compiled dependencies
+        id: dependencies-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/vcpkg-binary-cache
           key: windows-2022-v143-${{ hashFiles('vcpkg.json', '.github/vcpkg-triplets/**') }}
@@ -85,6 +86,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed.' }
           & "$env:VCPKG_ROOT/vcpkg.exe" integrate install
           if ($LASTEXITCODE -ne 0) { throw 'MSBuild integration failed.' }
+
+      - name: Save compiled dependencies
+        if: steps.dependencies-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/vcpkg-binary-cache
+          key: ${{ steps.dependencies-cache.outputs.cache-primary-key }}
 
       - name: Build executable and shaders
         run: |
