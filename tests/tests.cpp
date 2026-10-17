@@ -257,10 +257,12 @@ void embedded_profile_tests(const fs::path& scratch)
     const auto jxl = scratch / "custom-profile.jxl";
     encode_jxl(jxl, 8, 1, 3, &icc);
     Image image;
+    std::cout << "Checking JPEG XL custom ICC profile\n";
     CHECK(image.open(jxl));
     CHECK(image.profile && std::abs(cmsDetectRGBProfileGamma(image.profile.get(), 0.01) - 1.8) < 0.01);
 
     for (int bits : {8, 10, 12}) {
+        std::cout << "Checking " << bits << "-bit AVIF custom ICC profile\n";
         auto* context = heif_context_alloc();
         CHECK(context != nullptr);
         heif_encoder* encoder = nullptr;
@@ -328,6 +330,7 @@ void embedded_profile_tests(const fs::path& scratch)
 
 int wmain(int argc, wchar_t* argv[])
 {
+    std::cout << std::unitbuf;
     try {
         CHECK(argc == 3);
         const fs::path fixtures = fs::absolute(argv[1]), scratch = fs::absolute(argv[2]);
