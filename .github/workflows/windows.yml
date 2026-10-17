@@ -73,15 +73,27 @@ jobs:
           vs-version: '[17.0,18.0)'
           msbuild-architecture: x64
 
+      - name: Read compiler identity for the binary cache
+        id: compiler
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+          $installation = & $vswhere -latest -version '[17.0,18.0)' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $installation) { throw 'Visual C++ installation not found.' }
+          $version = (Get-Content "$installation/VC/Auxiliary/Build/Microsoft.VCToolsVersion.default.txt" -Raw).Trim()
+          "version=$version" >> $env:GITHUB_OUTPUT
+
       - name: Restore compiled dependencies
         id: dependencies-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/vcpkg-binary-cache
-          key: windows-2022-v143-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', '.github/vcpkg-triplets/**', '.github/vcpkg-overlay/**') }}
-          restore-keys: windows-2022-v143-
+          key: windows-2022-v143-${{ steps.compiler.outputs.version }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', '.github/vcpkg-triplets/**', '.github/vcpkg-overlay/**') }}
+          restore-keys: |
+            windows-2022-v143-${{ steps.compiler.outputs.version }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', '.github/vcpkg-triplets/**', '.github/vcpkg-overlay/**') }}-
+            windows-2022-v143-
 
       - name: Install dependencies
+        id: install-dependencies
         env:
           VCPKG_BINARY_SOURCES: clear;files,${{ runner.temp }}/vcpkg-binary-cache,readwrite
         run: |
@@ -92,6 +104,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed.' }
           & "$env:VCPKG_ROOT/vcpkg.exe" integrate install
           if ($LASTEXITCODE -ne 0) { throw 'MSBuild integration failed.' }
+
+      - name: Preserve partial dependency builds after failure
+        if: failure() && steps.install-dependencies.outcome == 'failure'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/vcpkg-binary-cache
+          key: ${{ steps.dependencies-cache.outputs.cache-primary-key }}-partial-${{ github.run_id }}
 
       - name: Save compiled dependencies
         if: steps.dependencies-cache.outputs.cache-hit != 'true'
