@@ -364,3 +364,7 @@ FodyWeavers.xsd
 
 # WIV
 *_hlsl.h
+.vcpkg/
+vcpkg_installed/
+build/
+package/

@@ -1,0 +1,146 @@
+name: Build Windows executable
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  build:
+    name: Windows x64 Release
+    runs-on: windows-2022
+    timeout-minutes: 120
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/.vcpkg
+      VCPKG_DEFAULT_TRIPLET: x64-windows-static
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read and validate version
+        id: version
+        run: |
+          $header = Get-Content w-image-viewer/src/resources/version.h -Raw
+          $parts = foreach ($part in 'MAJOR', 'MINOR', 'PATCH') {
+            if ($header -notmatch "(?m)^#define WIV_VERSION_NUMBER_$part\s+(\d+)\s*$") {
+              throw "Missing version component: $part"
+            }
+            $Matches[1]
+          }
+          $version = $parts -join '.'
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -cne "v$version") {
+            throw "Release tag must match version.h: v$version"
+          }
+          if ((Get-Content vcpkg.json -Raw | ConvertFrom-Json).version -cne $version) {
+            throw 'vcpkg.json and version.h must have the same version.'
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Check out pinned vcpkg
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: microsoft/vcpkg
+          ref: 66c0373dc7fca549e5803087b9487edfe3aca0a1 # 2026.01.16
+          path: .vcpkg
+          persist-credentials: false
+
+      - name: Set up MSBuild
+        uses: microsoft/setup-msbuild@30375c66a4eea26614e0d39710365f22f8b0af57 # v3.0.0
+        with:
+          vs-version: '[17.0,18.0)'
+          msbuild-architecture: x64
+
+      - name: Cache compiled dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/vcpkg-binary-cache
+          key: windows-2022-v143-${{ hashFiles('vcpkg.json', '.github/vcpkg-triplets/**') }}
+
+      - name: Install dependencies
+        env:
+          VCPKG_BINARY_SOURCES: clear;files,${{ runner.temp }}/vcpkg-binary-cache,readwrite
+        run: |
+          New-Item -ItemType Directory -Force "${{ runner.temp }}/vcpkg-binary-cache" | Out-Null
+          & "$env:VCPKG_ROOT/bootstrap-vcpkg.bat" -disableMetrics
+          if ($LASTEXITCODE -ne 0) { throw 'vcpkg bootstrap failed.' }
+          & "$env:VCPKG_ROOT/vcpkg.exe" install --triplet x64-windows-static --overlay-triplets=.github/vcpkg-triplets --clean-after-build
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed.' }
+          & "$env:VCPKG_ROOT/vcpkg.exe" integrate install
+          if ($LASTEXITCODE -ne 0) { throw 'MSBuild integration failed.' }
+
+      - name: Build executable and shaders
+        run: |
+          msbuild w-image-viewer.sln /m /t:Build /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /p:VcpkgEnableManifest=true /p:VcpkgManifestInstall=false /p:VcpkgTriplet=x64-windows-static "/p:VcpkgInstalledDir=$env:GITHUB_WORKSPACE/vcpkg_installed/" "/p:OutDir=$env:GITHUB_WORKSPACE/build/" /verbosity:minimal
+          if ($LASTEXITCODE -ne 0) { throw 'MSBuild failed.' }
+
+      - name: Verify and package executable
+        env:
+          WIV_VERSION: ${{ steps.version.outputs.version }}
+        run: ./.github/scripts/package.ps1 -Version $env:WIV_VERSION
+
+      - name: Upload executable and portable archive
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: w-image-viewer-${{ steps.version.outputs.version }}-windows-x64
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified build
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: w-image-viewer-${{ needs.build.outputs.version }}-windows-x64
+          path: artifacts
+
+      - name: Create release and upload assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > release-notes.md <<EOF
+          Windows x64 Release build of W Image Viewer ${RELEASE_VERSION}.
+
+          Download **w-image-viewer.exe** to run the application, or extract the portable ZIP to include the manual and license notices.
+
+          Requires Windows x64 with DirectX 11 support and the [Microsoft Visual C++ x64 Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe) (including the OpenMP runtime).
+
+          SHA-256 checksums are included in SHA256SUMS.txt.
+          Built from commit ${GITHUB_SHA} by [GitHub Actions](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}).
+          EOF
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" artifacts/* --clobber
+          else
+            gh release create "$RELEASE_TAG" artifacts/* --verify-tag --latest --title "W Image Viewer ${RELEASE_VERSION}" --notes-file release-notes.md
+          fi
