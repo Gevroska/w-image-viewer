@@ -10,7 +10,7 @@
   <PropertyGroup Label="Vcpkg"><VcpkgUseStatic>true</VcpkgUseStatic></PropertyGroup>
   <PropertyGroup><TargetName>wiv-tests</TargetName><IntDir>$(ProjectDir)obj\</IntDir></PropertyGroup>
   <ItemDefinitionGroup>
-    <ClCompile><LanguageStandard>stdcpp20</LanguageStandard><RuntimeLibrary>MultiThreaded</RuntimeLibrary><AdditionalIncludeDirectories>$(ProjectDir)..\w-image-viewer\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories><AdditionalOptions>/utf-8 /D "_CRT_SECURE_NO_WARNINGS" %(AdditionalOptions)</AdditionalOptions><PreprocessorDefinitions>NDEBUG;WIV_TESTS;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile>
+    <ClCompile><LanguageStandard>stdcpp20</LanguageStandard><RuntimeLibrary>MultiThreaded</RuntimeLibrary><AdditionalIncludeDirectories>$(ProjectDir)..\w-image-viewer\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories><AdditionalOptions>/constexpr:steps9999999 /utf-8 /D "_CRT_SECURE_NO_WARNINGS" %(AdditionalOptions)</AdditionalOptions><PreprocessorDefinitions>NDEBUG;WIV_TESTS;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile>
     <Link><SubSystem>Console</SubSystem><GenerateMapFile>true</GenerateMapFile><AdditionalDependencies>$(CoreLibraryDependencies);bcrypt.lib;Shlwapi.lib;d3d11.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
   </ItemDefinitionGroup>
   <ItemGroup>
