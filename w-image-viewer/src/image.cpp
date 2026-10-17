@@ -109,12 +109,19 @@ bool Image::read_input(OIIO::ImageInput& input, int fallback_orientation)
         case OIIO::TypeDesc::HALF: fill_alpha<Imath::half>(pixels_); break;
         default: fill_alpha<float>(pixels_); break;
     }
-    if (!input.read_image(0, 0, 0, color_channels, format_, pixels_.data(), pixel_bytes())
-        || (alpha_ && !input.read_image(0, 0, spec.alpha_channel, spec.alpha_channel + 1, format_,
+    const bool adjacent_alpha = alpha_ && spec.alpha_channel == color_channels;
+    const int read_channels = color_channels + (adjacent_alpha ? 1 : 0);
+    if (!input.read_image(0, 0, 0, read_channels, format_, pixels_.data(), pixel_bytes())
+        || (alpha_ && !adjacent_alpha && !input.read_image(0, 0, spec.alpha_channel, spec.alpha_channel + 1, format_,
                                        pixels_.data() + 3 * format_.size(), pixel_bytes()))) {
         error = input.geterror();
         pixels_.clear();
         return false;
+    }
+    if (gray && adjacent_alpha) {
+        for (size_t i = 0; i < count; ++i)
+            std::memcpy(pixels_.data() + i * pixel_bytes() + 3 * format_.size(),
+                        pixels_.data() + i * pixel_bytes() + format_.size(), format_.size());
     }
     const bool associate = alpha_ && spec.get_int_attribute("oiio:UnassociatedAlpha", 0);
     switch (format_.basetype) {

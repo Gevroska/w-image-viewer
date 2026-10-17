@@ -1,5 +1,6 @@
 set(PATCHES
     viewer-input-fixes.patch
+    viewer-tiff-orientation.patch
     fix-dependencies.patch
     fix-static-ffmpeg.patch
     imath-version-guard.patch

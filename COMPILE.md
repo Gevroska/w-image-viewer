@@ -16,6 +16,12 @@ git tag v2.1.1
 git push origin v2.1.1
 ```
 
+Beta tags such as `v2.2.0-beta.1` must match `WIV_VERSION_STRING` in the version
+header and `version-semver` in the manifest. Numeric Windows resources keep
+the base version, while FileVersion, ProductVersion, and the About dialog show
+the full beta version. Beta releases use `--prerelease --latest=false` and leave
+the latest stable release unchanged.
+
 ### Building from source on Windows
 
 Install Visual Studio 2022 with the Desktop development with C++ workload,
@@ -25,6 +31,14 @@ v145 setting with v143, so it can build on the Windows 2022 runner.
 Dependencies are declared in `vcpkg.json`: Dear ImGui (DirectX 11 and Win32
 bindings), Little CMS, LibRaw, and OpenImageIO with the image codecs used by
 the application. The vcpkg baseline is pinned to the same revision as CI.
+
+`vcpkg-configuration.json` selects the release-only static triplet and the
+OpenImageIO overlay in `.github/vcpkg-overlay/openimageio`. That overlay is
+copied from the pinned vcpkg baseline and adds `viewer-input-fixes.patch` for
+JPEG XL sample depths, color/alpha channel selection, ICC metadata, first-frame
+selection, and HEIF/AVIF ICC/NCLX metadata. AVIF decoding is enabled through
+`libheif[aom]`; JPEG XL uses OpenImageIO's `jpegxl` feature. Overlay contents
+are included in the CI dependency-cache key.
 
 From the repository root, in a Developer PowerShell for Visual Studio:
 
@@ -40,3 +54,19 @@ msbuild w-image-viewer.sln /m /p:Configuration=Release /p:Platform=x64 /p:Platfo
 The executable is written to `build/w-image-viewer.exe`. The CI triplet builds
 only Release libraries with static linkage. LibRaw's OpenMP support still
 requires the Microsoft Visual C++ x64 Redistributable at runtime.
+
+### Regression tests
+
+CI builds `tests/wiv-tests.vcxproj` with the same static dependencies and runs:
+
+```powershell
+.\build\wiv-tests.exe .\tests\fixtures .\build\test-data
+```
+
+The suite exercises all eight orientation permutations, independent JPEG/PNG/
+TIFF/AVIF reference images, gray/alpha handling, JPEG XL 8/10/12/16-bit data,
+native JXL orientations, ICC profiles, navigation visibility timing, and
+mixed-format directory traversal with corrupt neighbors and Unicode paths.
+Fixtures and pixel references are committed. `tests/generate_fixtures.py`
+regenerates the independent references with Pillow 12.3.0; Pillow is not a
+runtime dependency of the viewer or test executable.

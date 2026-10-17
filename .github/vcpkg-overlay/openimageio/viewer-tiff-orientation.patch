@@ -1,0 +1,19 @@
+--- a/src/tiff.imageio/tiffinput.cpp
++++ b/src/tiff.imageio/tiffinput.cpp
+@@ -1687,10 +1687,16 @@
+         // buffer the whole image.
+         if (!m_rgbadata.size()) {  // first time through: allocate & read
+             m_rgbadata.resize(m_spec.image_pixels());
++            // Return stored pixel order consistently with the scanline path.
++            // The caller applies ImageSpec Orientation once, including transpose cases.
++            uint16_t stored_orientation = ORIENTATION_TOPLEFT;
++            TIFFGetFieldDefaulted(m_tif, TIFFTAG_ORIENTATION, &stored_orientation);
++            TIFFSetField(m_tif, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
+             bool ok = TIFFReadRGBAImageOriented(m_tif, m_spec.width,
+                                                 m_spec.height,
+                                                 m_rgbadata.data(),
+                                                 ORIENTATION_TOPLEFT, 0);
++            TIFFSetField(m_tif, TIFFTAG_ORIENTATION, stored_orientation);
+             if (!ok) {
+                 std::string err = oiio_tiff_last_error();
+                 errorfmt("Unknown error trying to read TIFF as RGBA ({})",

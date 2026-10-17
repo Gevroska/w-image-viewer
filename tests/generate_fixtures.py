@@ -1,6 +1,7 @@
 """Generate independent decoder references with Pillow (fixtures are committed)."""
 from pathlib import Path
 from PIL import Image, ImageCms, ImageOps
+import struct
 
 root = Path(__file__).parent / 'fixtures'
 root.mkdir(exist_ok=True)
@@ -9,7 +10,9 @@ colors = [(240, 20, 30), (20, 220, 40), (30, 40, 230), (240, 220, 30)]
 for y in range(image.height):
     for x in range(image.width):
         image.putpixel((x, y), colors[(y >= 20) * 2 + (x >= 32)])
-icc = ImageCms.ImageCmsProfile(ImageCms.createProfile('sRGB')).tobytes()
+icc = bytearray(ImageCms.ImageCmsProfile(ImageCms.createProfile('sRGB')).tobytes())
+icc[24:36] = struct.pack('>6H', 2000, 1, 1, 0, 0, 0)
+icc = bytes(icc)
 
 def reference(path):
     decoded = ImageOps.exif_transpose(Image.open(path)).convert('RGBA')
@@ -30,7 +33,25 @@ for suffix in ('png', 'jpg', 'tiff'):
         image.save(path, **options)
         reference(path)
 image.save(root / 'plain.webp', lossless=True)
+for orientation in range(1, 9):
+    exif = Image.Exif()
+    exif[274] = orientation
+    path = root / f'ycbcr-{orientation}.tiff'
+    image.convert('YCbCr').save(path, exif=exif, compression='tiff_lzw')
+    reference(path)
 reference(root / 'plain.webp')
+image.save(root / 'plain.png')
+reference(root / 'plain.png')
+for orientation in (0, 9):
+    exif = Image.Exif()
+    exif[274] = orientation
+    path = root / f'orientation-{orientation}.png'
+    image.save(path, exif=exif)
+    reference(path)
+exif = Image.Exif()
+exif[274] = 6
+gray16 = Image.frombytes('I;16', (3, 2), struct.pack('<6H', 100, 200, 300, 400, 500, 600))
+gray16.save(root / 'gray16-orientation6.png', exif=exif)
 alpha = image.convert('RGBA')
 for y in range(alpha.height):
     for x in range(alpha.width):

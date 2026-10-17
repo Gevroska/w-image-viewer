@@ -157,6 +157,7 @@ void User_interface::reset_image_panzoom() noexcept
     image_pan = ImVec2();
     image_zoom = 0.0f;
     image_no_scale = false;
+    is_panning = is_zooming = is_rotating = false;
 }
 
 void User_interface::slideshow()

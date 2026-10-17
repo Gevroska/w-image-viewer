@@ -28,6 +28,19 @@ with each release.
 Builds of the latest source are also available as downloadable artifacts in
 [GitHub Actions](https://github.com/Gevroska/w-image-viewer/actions/workflows/windows.yml).
 
+## 2.2.0 beta
+
+[2.2.0-beta.1](https://github.com/Gevroska/w-image-viewer/releases/tag/v2.2.0-beta.1)
+adds all eight EXIF orientations, JPEG XL and AVIF decoding, and previous/next
+buttons at the sides of the viewer. Moving the mouse reveals the buttons;
+they fade after two seconds of inactivity and stay visible while hovered.
+Folder navigation includes all supported image formats in filename order.
+
+The beta is published as a prerelease; 2.1.1 remains the latest stable release.
+The renderer supports SDR still images. AVIF currently decodes to 8-bit RGB(A).
+JPEG XL animations show their first complete frame; animation playback and HDR
+output are not part of this beta.
+
 ## 
 
 [User manual](MANUAL.md)  

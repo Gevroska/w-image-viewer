@@ -133,6 +133,7 @@ jobs:
           name: validation-${{ steps.version.outputs.version }}
           path: |
             build/wiv-tests.exe
+            build/w-image-viewer.exe
             build/test-results.txt
             tests/fixtures/**
           if-no-files-found: warn

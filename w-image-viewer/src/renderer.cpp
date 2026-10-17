@@ -61,7 +61,7 @@ void Renderer::update()
 	if (srv_image && should_update) {
 		update_scale_and_dims_output();
 		update_scale_profile();
-		if (!(ui.is_panning || ui.is_zooming || ui.is_rotating)) {
+		if (!(ui.is_panning || ui.is_zooming)) {
 			srv_pass = srv_image;
 			if (!is_equal(scale, 1.0f)) {
 				const bool sigmoidize = scale > 1.0f && p_scale_profile->sigmoid_use.val;
@@ -134,8 +134,6 @@ bool Renderer::create_image()
 	UINT sys_mem_pitch;
 	const uint8_t* data = get_image_data(*candidate, format, sys_mem_pitch);
 	
-	Info::image_width = candidate->get_width<int>();
-	Info::image_height = candidate->get_height<int>();
 
 	// Create texture.
 	D3D11_TEXTURE2D_DESC texture2d_desc = {};
@@ -159,6 +157,8 @@ bool Renderer::create_image()
 	}
 	srv_image = std::move(view);
 	ui.file_manager.commit_open();
+    Info::image_width = image.get_width<int>();
+    Info::image_height = image.get_height<int>();
 	Info::image_bitdepth = image.bitdepth;
 	Info::image_nchannels = image.channels;
 

@@ -6,6 +6,7 @@
 #include <jxl/encode.h>
 #include <jxl/encode_cxx.h>
 #include <jxl/color_encoding.h>
+#include <libheif/heif.h>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
@@ -88,14 +89,29 @@ void fixture_tests(const fs::path& fixtures)
         }
     }
     compare_fixture(fixtures / "alpha.png", 64, 40, 0);
+    for (int orientation = 1; orientation <= 8; ++orientation)
+        compare_fixture(fixtures / (L"ycbcr-" + std::to_wstring(orientation) + L".tiff"),
+                        orientation >= 5 ? 40 : 64, orientation >= 5 ? 64 : 40, 4);
     compare_fixture(fixtures / "gray-alpha.png", 64, 40, 0);
     compare_fixture(fixtures / "plain.webp", 64, 40, 0);
+    compare_fixture(fixtures / "plain.png", 64, 40, 0);
+    compare_fixture(fixtures / "orientation-0.png", 64, 40, 0);
+    compare_fixture(fixtures / "orientation-9.png", 64, 40, 0);
     compare_fixture(fixtures / "plain.avif", 64, 40, 5);
     compare_fixture(fixtures / "alpha.avif", 64, 40, 5);
     for (int orientation : {2, 6, 7, 8})
         compare_fixture(fixtures / (L"orientation-" + std::to_wstring(orientation) + L".avif"),
                         orientation >= 5 ? 40 : 64, orientation >= 5 ? 64 : 40, 5);
     Image image;
+    CHECK(image.open(fixtures / "gray16-orientation6.png"));
+    CHECK(image.get_basetype() == OIIO::TypeDesc::UINT16);
+    CHECK(image.get_width<int>() == 2 && image.get_height<int>() == 3);
+    const uint16_t expected16[] = {400, 100, 500, 200, 600, 300};
+    const auto* pixels16 = reinterpret_cast<const uint16_t*>(image.pixels());
+    for (int p = 0; p < 6; ++p) {
+        CHECK(pixels16[4 * p] == expected16[p] && pixels16[4 * p + 1] == expected16[p]
+            && pixels16[4 * p + 2] == expected16[p] && pixels16[4 * p + 3] == 65535);
+    }
     CHECK(image.open(fixtures / "orientation-6.png"));
     CHECK(image.open(fixtures / "orientation-1.png"));
     CHECK(image.get_width<int>() == 64 && image.get_height<int>() == 40);
@@ -107,7 +123,7 @@ void fixture_tests(const fs::path& fixtures)
     std::cout << "PASS: independent JPEG/PNG/TIFF orientation references, WebP, AVIF, alpha, metadata reset, failed-load preservation\n";
 }
 
-void encode_jxl(const fs::path& path, int bits, int orientation, int channels)
+void encode_jxl(const fs::path& path, int bits, int orientation, int channels, const std::vector<uint8_t>* icc = nullptr)
 {
     auto encoder = JxlEncoderMake(nullptr);
     CHECK(encoder != nullptr);
@@ -122,7 +138,8 @@ void encode_jxl(const fs::path& path, int bits, int orientation, int channels)
     CHECK(JxlEncoderSetBasicInfo(encoder.get(), &info) == JXL_ENC_SUCCESS);
     JxlColorEncoding color;
     JxlColorEncodingSetToSRGB(&color, info.num_color_channels == 1);
-    CHECK(JxlEncoderSetColorEncoding(encoder.get(), &color) == JXL_ENC_SUCCESS);
+    if (icc) CHECK(JxlEncoderSetICCProfile(encoder.get(), icc->data(), icc->size()) == JXL_ENC_SUCCESS);
+    else CHECK(JxlEncoderSetColorEncoding(encoder.get(), &color) == JXL_ENC_SUCCESS);
     auto* settings = JxlEncoderFrameSettingsCreate(encoder.get(), nullptr);
     CHECK(JxlEncoderSetFrameLossless(settings, JXL_TRUE) == JXL_ENC_SUCCESS);
     const JxlPixelFormat format{uint32_t(channels), bits <= 8 ? JXL_TYPE_UINT8 : JXL_TYPE_UINT16, JXL_NATIVE_ENDIAN, 0};
@@ -188,9 +205,10 @@ void navigation_tests(const fs::path& fixtures, const fs::path& scratch)
     for (const auto& [from, to] : copies) fs::copy_file(fixtures / from, directory / to, fs::copy_options::overwrite_existing);
     fs::copy_file(scratch / "jxl-8-1.jxl", directory / "05.jxl", fs::copy_options::overwrite_existing);
     File_manager manager;
-    CHECK(manager.file_open((directory / "01.png").c_str()));
+    CHECK(manager.file_open((directory / "01.PNG").c_str()));
     CHECK(!manager.image.is_valid());
     manager.commit_open();
+    CHECK(manager.file_current.filename() == "01.png");
     for (const auto* name : {"02.jpg", "03.webp", "04.avif", "05.jxl", "06.UPPER.PNG"}) {
         CHECK(manager.file_next()); manager.commit_open(); CHECK(manager.file_current.filename() == name);
     }
@@ -209,6 +227,87 @@ void navigation_tests(const fs::path& fixtures, const fs::path& scratch)
     std::cout << "PASS: mixed PNG/JPEG/WebP/AVIF/JXL navigation, uppercase, Unicode, corrupt neighbors, boundaries, cycling, deleted current file\n";
 }
 
+void embedded_profile_tests(const fs::path& scratch)
+{
+    const cmsCIExyYTRIPLE primaries = {{0.64,0.33,1}, {0.3,0.6,1}, {0.15,0.06,1}};
+    auto* curve = cmsBuildGamma(nullptr, 1.8);
+    CHECK(curve != nullptr);
+    cmsToneCurve* curves[] = {curve, curve, curve};
+    auto profile = cmsCreateRGBProfile(cmsD50_xyY(), &primaries, curves);
+    cmsFreeToneCurve(curve);
+    CHECK(profile != nullptr);
+    cmsUInt32Number length = 0;
+    CHECK(cmsSaveProfileToMem(profile, nullptr, &length));
+    std::vector<uint8_t> icc(length);
+    CHECK(cmsSaveProfileToMem(profile, icc.data(), &length));
+    cmsCloseProfile(profile);
+    const auto jxl = scratch / "custom-profile.jxl";
+    encode_jxl(jxl, 8, 1, 3, &icc);
+    Image image;
+    CHECK(image.open(jxl));
+    CHECK(image.profile && std::abs(cmsDetectRGBProfileGamma(image.profile.get(), 0.01) - 1.8) < 0.01);
+
+    for (int bits : {8, 10, 12}) {
+        auto* context = heif_context_alloc();
+        CHECK(context != nullptr);
+        heif_encoder* encoder = nullptr;
+        CHECK(heif_context_get_encoder_for_format(context, heif_compression_AV1, &encoder).code == heif_error_Ok);
+        CHECK(heif_encoder_set_lossy_quality(encoder, 100).code == heif_error_Ok);
+        heif_image* source = nullptr;
+        const auto chroma = bits == 8 ? heif_chroma_interleaved_RGB : heif_chroma_interleaved_RRGGBB_LE;
+        CHECK(heif_image_create(8, 8, heif_colorspace_RGB, chroma, &source).code == heif_error_Ok);
+        CHECK(heif_image_add_plane(source, heif_channel_interleaved, 8, 8, bits).code == heif_error_Ok);
+        int stride = 0;
+        auto* pixels = heif_image_get_plane(source, heif_channel_interleaved, &stride);
+        for (int y = 0; y < 8; ++y) {
+            for (int x = 0; x < 8 * 3; ++x) {
+                if (bits == 8) pixels[y * stride + x] = 128;
+                else reinterpret_cast<uint16_t*>(pixels + y * stride)[x] = uint16_t(((1 << bits) - 1) / 2);
+            }
+        }
+        CHECK(heif_image_set_raw_color_profile(source, "prof", icc.data(), icc.size()).code == heif_error_Ok);
+        heif_image_handle* handle = nullptr;
+        CHECK(heif_context_encode_image(context, source, encoder, nullptr, &handle).code == heif_error_Ok);
+        CHECK(heif_image_handle_get_luma_bits_per_pixel(handle) == bits);
+        const auto avif = scratch / ("custom-profile-" + std::to_string(bits) + ".avif");
+        CHECK(heif_context_write_to_file(context, avif.string().c_str()).code == heif_error_Ok);
+        heif_image_handle_release(handle); heif_image_release(source);
+        heif_encoder_release(encoder); heif_context_free(context);
+        CHECK(image.open(avif));
+        CHECK(image.profile && std::abs(cmsDetectRGBProfileGamma(image.profile.get(), 0.01) - 1.8) < 0.01);
+        CHECK(image.get_basetype() == OIIO::TypeDesc::UINT8 && std::abs(int(image.pixels()[0]) - 128) <= 3);
+    }
+    std::cout << "PASS: custom gamma-1.8 ICC profiles survive JXL and 8/10/12-bit AVIF decoding without sRGB fallback\n";
+
+    auto* context = heif_context_alloc();
+    CHECK(context != nullptr);
+    heif_encoder* encoder = nullptr;
+    CHECK(heif_context_get_encoder_for_format(context, heif_compression_AV1, &encoder).code == heif_error_Ok);
+    heif_image* source = nullptr;
+    CHECK(heif_image_create(8, 8, heif_colorspace_RGB, heif_chroma_interleaved_RGB, &source).code == heif_error_Ok);
+    CHECK(heif_image_add_plane(source, heif_channel_interleaved, 8, 8, 8).code == heif_error_Ok);
+    int stride = 0;
+    auto* pixels = heif_image_get_plane(source, heif_channel_interleaved, &stride);
+    for (int y = 0; y < 8; ++y) std::memset(pixels + y * stride, 128, 24);
+    auto* nclx = heif_nclx_color_profile_alloc();
+    CHECK(nclx != nullptr);
+    CHECK(heif_nclx_color_profile_set_color_primaries(nclx, 12).code == heif_error_Ok); // Display P3
+    CHECK(heif_nclx_color_profile_set_transfer_characteristics(nclx, 13).code == heif_error_Ok); // sRGB
+    CHECK(heif_nclx_color_profile_set_matrix_coefficients(nclx, 1).code == heif_error_Ok);
+    CHECK(heif_image_set_nclx_color_profile(source, nclx).code == heif_error_Ok);
+    heif_image_handle* handle = nullptr;
+    CHECK(heif_context_encode_image(context, source, encoder, nullptr, &handle).code == heif_error_Ok);
+    const auto avif = scratch / "nclx-p3.avif";
+    CHECK(heif_context_write_to_file(context, avif.string().c_str()).code == heif_error_Ok);
+    heif_image_handle_release(handle); heif_nclx_color_profile_free(nclx);
+    heif_image_release(source); heif_encoder_release(encoder); heif_context_free(context);
+    CHECK(image.open(avif));
+    CHECK(image.profile != nullptr);
+    const auto* red = static_cast<const cmsCIEXYZ*>(cmsReadTag(image.profile.get(), cmsSigRedColorantTag));
+    CHECK(red && red->X > 0.48); // Display P3's red differs from the sRGB fallback (~0.436).
+    std::cout << "PASS: AVIF NCLX Display P3 metadata creates a wide-gamut display profile\n";
+}
+
 int wmain(int argc, wchar_t* argv[])
 {
     try {
@@ -216,7 +315,7 @@ int wmain(int argc, wchar_t* argv[])
         const fs::path fixtures = fs::absolute(argv[1]), scratch = fs::absolute(argv[2]);
         fs::create_directories(scratch);
         orientation_tests(); visibility_tests(); fixture_tests(fixtures);
-        jxl_tests(scratch); navigation_tests(fixtures, scratch);
+        jxl_tests(scratch); embedded_profile_tests(scratch); navigation_tests(fixtures, scratch);
         std::cout << "PASS: " << assertions << " assertions\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

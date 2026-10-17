@@ -28,17 +28,17 @@ public:
     void on_mouse_activity();
     bool navigation_visible() const noexcept { return navigation_visibility_.alpha > 0.0f; }
     File_manager file_manager;
-    bool is_fullscreen = 0;
-    bool is_dialog_file_open = 0;
+    bool is_fullscreen = false;
+    bool is_dialog_file_open = false;
     ImVec2 image_pan;
-    bool is_panning = 0;
+    bool is_panning = false;
     float image_zoom = 0;
-    bool is_zooming = 0;
+    bool is_zooming = false;
     int image_rotation = 0;
-    bool is_rotating = 0;
+    bool is_rotating = false;
     
     // Request to show image at the original width and height.
-    bool image_no_scale = 0;
+    bool image_no_scale = false;
     
 private:
     void navigation_controls();
@@ -50,12 +50,12 @@ private:
     void window_about();
     void dialog_file_open(WIV_OPEN_ file_type);
     bool is_overlay_open = g_config.overlay_show.val;
-    bool is_window_settings_open = 0;
-    bool is_window_slideshow_open = 0;
-    bool is_window_about_open = 0;
+    bool is_window_settings_open = false;
+    bool is_window_slideshow_open = false;
+    bool is_window_about_open = false;
     bool* prenderer_should_update = nullptr;
-    bool is_slideshow_start = 0;
-    bool is_slideshow_playing = 0;
+    bool is_slideshow_start = false;
+    bool is_slideshow_playing = false;
     wiv::Navigation_visibility navigation_visibility_;
     bool navigation_captures_mouse_ = false;
     bool canvas_drag_ = false;
