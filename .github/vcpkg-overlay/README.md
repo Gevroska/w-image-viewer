@@ -8,6 +8,9 @@ JPEG XL decoding selects color plus optional alpha, supports integer depths
 through 16 bits, exposes the decoded-data ICC profile and alpha association,
 retains libjxl's normalized orientation, and returns the first complete frame.
 It also accepts small valid codestreams and checks output dimensions and sizes.
+The overlay retains upstream FindJXL.cmake and requires JXL discovery when the
+feature is enabled; otherwise the pinned port can silently omit the plugin.
+It also discovers AOM before importing libheif's static CMake target.
 
 HEIF/AVIF decoding exposes embedded ICC data and SDR NCLX primaries/transfer
 metadata. Container transformations remain owned by libheif. The application

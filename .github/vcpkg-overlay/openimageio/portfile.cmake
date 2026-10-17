@@ -44,7 +44,6 @@ file(REMOVE
     "${SOURCE_PATH}/src/cmake/modules/FindWebP.cmake"
     "${SOURCE_PATH}/src/cmake/modules/Findfmt.cmake"
     "${SOURCE_PATH}/src/cmake/modules/FindTBB.cmake"
-    "${SOURCE_PATH}/src/cmake/modules/FindJXL.cmake"
 )
 
 vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS
@@ -64,6 +63,11 @@ vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS
         viewer      ENABLE_IV
 )
 
+set(REQUIRE_JXL OFF)
+if("jpegxl" IN_LIST FEATURES)
+    set(REQUIRE_JXL ON)
+endif()
+
 if("pybind11" IN_LIST FEATURES)
     vcpkg_get_vcpkg_installed_python(PYTHON3)
     list(APPEND FEATURE_OPTIONS "-DPython3_EXECUTABLE=${PYTHON3}")
@@ -73,6 +77,7 @@ vcpkg_cmake_configure(
     SOURCE_PATH "${SOURCE_PATH}"
     OPTIONS
         ${FEATURE_OPTIONS}
+        "-DCMAKE_REQUIRE_FIND_PACKAGE_JXL=${REQUIRE_JXL}"
         -DBUILD_TESTING=OFF
         -DOIIO_BUILD_TESTS=OFF
         -DUSE_DCMTK=OFF

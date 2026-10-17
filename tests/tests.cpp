@@ -67,7 +67,9 @@ void compare_fixture(const fs::path& path, int width, int height, int tolerance)
 {
     const auto source_bytes = read_file(path);
     Image image;
-    CHECK(image.open(path));
+    const bool opened = image.open(path);
+    if (!opened) std::cerr << "Decode failed for " << path.filename().string() << ": " << image.error << '\n';
+    CHECK(opened);
     CHECK(image.get_width<int>() == width && image.get_height<int>() == height);
     CHECK(image.get_basetype() == OIIO::TypeDesc::UINT8);
     const auto expected = read_file(fs::path(path.wstring() + L".rgba"));
@@ -176,7 +178,9 @@ void jxl_tests(const fs::path& scratch)
             const auto path = scratch / ("jxl-" + std::to_string(bits) + "-" + std::to_string(orientation) + ".jxl");
             encode_jxl(path, bits, orientation, 3);
             Image image;
-            CHECK(image.open(path));
+            const bool opened = image.open(path);
+            if (!opened) std::cerr << "Decode failed for " << path.filename().string() << ": " << image.error << '\n';
+            CHECK(opened);
             CHECK(image.get_width<int>() == (orientation >= 5 ? 2 : 3));
             CHECK(image.get_height<int>() == (orientation >= 5 ? 3 : 2));
             CHECK(image.profile != nullptr);
